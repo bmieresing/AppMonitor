@@ -1,7 +1,9 @@
 import streamlit as st
 import gspread
 import pandas as pd
+from datetime import date
 
+COLUMNAS_INTERES = ["FECHA", "CHOFER", "PEONETA1", "PEONETA2", "PATENTE", "PROM RUTA"]
 
 @st.cache_data(ttl=300)
 def cargar_datos() -> pd.DataFrame:
@@ -13,4 +15,18 @@ def cargar_datos() -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
     df.replace({"#N/A": None, "": None}, inplace=True)
-    return df
+
+    # Filtrar solo columnas de interés (por coincidencia parcial, case-insensitive)
+    cols_sel = [
+        c for c in df.columns
+        if any(k in c.upper() for k in COLUMNAS_INTERES)
+    ]
+    df = df[cols_sel] if cols_sel else df
+
+    # Filtrar filas del día de hoy por columna Fecha
+    col_fecha = next((c for c in df.columns if "FECHA" in c.upper()), None)
+    if col_fecha:
+        hoy = date.today().strftime("%d/%m/%Y")
+        df = df[df[col_fecha] == hoy]
+
+    return df.reset_index(drop=True)
