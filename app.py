@@ -1,6 +1,9 @@
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("America/Santiago")
 
 from connectors.sheets import cargar_datos
 from components.tabla import mostrar_tabla
@@ -27,11 +30,12 @@ intervalo = int(st.secrets.get("refresh_interval_seconds", 300)) * 1000
 st_autorefresh(interval=intervalo, key="refresh")
 
 # Header
+ahora = datetime.now(TZ)
 col_titulo, col_hora = st.columns([3, 1])
-col_titulo.title(f"App Monitor — {date.today().strftime('%d/%m/%Y')}")
+col_titulo.title(f"App Monitor — {ahora.strftime('%d/%m/%Y')}")
 col_hora.markdown(
     f"<div style='text-align:right; padding-top:16px; color:gray'>"
-    f"Actualizado: {datetime.now().strftime('%H:%M:%S')}</div>",
+    f"Actualizado: {ahora.strftime('%H:%M:%S')}</div>",
     unsafe_allow_html=True,
 )
 

@@ -23,10 +23,10 @@ def cargar_datos() -> pd.DataFrame:
     ]
     df = df[cols_sel] if cols_sel else df
 
-    # Filtrar filas del día de hoy por columna Fecha
+    # Filtrar filas del día de hoy por columna Fecha (acepta cualquier formato parseable)
     col_fecha = next((c for c in df.columns if "FECHA" in c.upper()), None)
     if col_fecha:
-        hoy = date.today().strftime("%d/%m/%Y")
-        df = df[df[col_fecha] == hoy]
+        fechas = pd.to_datetime(df[col_fecha], dayfirst=True, errors="coerce")
+        df = df[fechas.dt.date == date.today()]
 
     return df.reset_index(drop=True)
