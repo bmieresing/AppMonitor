@@ -190,10 +190,12 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
         if key not in st.session_state:
             st.session_state[key] = val
 
-    tick = st_autorefresh(interval=INTERVALO_SEG * 1000, key="carrusel_tick")
-    if not st.session_state.carrusel_paused and tick != st.session_state.carrusel_tick_prev:
-        st.session_state.carrusel_idx = (st.session_state.carrusel_idx + 1) % n
-        st.session_state.carrusel_tick_prev = tick
+    auto = st.toggle("Auto-avanzar cada 10 seg", value=False, key="carrusel_auto")
+    if auto:
+        tick = st_autorefresh(interval=INTERVALO_SEG * 1000, key="carrusel_tick")
+        if tick != st.session_state.carrusel_tick_prev:
+            st.session_state.carrusel_idx = (st.session_state.carrusel_idx + 1) % n
+            st.session_state.carrusel_tick_prev = tick
 
     idx = st.session_state.carrusel_idx % n
     chofer = choferes[idx]
@@ -207,7 +209,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     dots       = "".join("⬤ " if i == idx else "○ " for i in range(min(n, 20)))
 
     # ── Navegación + Banner ──────────────────────────────────────
-    c_prev, c_banner, c_next, c_pause = st.columns([1, 14, 1, 2])
+    c_prev, c_banner, c_next = st.columns([1, 14, 1])
     with c_prev:
         if st.button("◀", key="btn_prev", use_container_width=True):
             st.session_state.carrusel_idx = (idx - 1) % n
@@ -239,11 +241,6 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     with c_next:
         if st.button("▶", key="btn_next", use_container_width=True):
             st.session_state.carrusel_idx = (idx + 1) % n
-            st.rerun()
-    with c_pause:
-        lbl = "⏸ Pausar" if not st.session_state.carrusel_paused else "▶ Reanudar"
-        if st.button(lbl, key="btn_pause", use_container_width=True):
-            st.session_state.carrusel_paused = not st.session_state.carrusel_paused
             st.rerun()
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
