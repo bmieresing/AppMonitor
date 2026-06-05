@@ -211,7 +211,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     # ── Navegación + Banner ──────────────────────────────────────
     c_prev, c_banner, c_next = st.columns([1, 14, 1])
     with c_prev:
-        if st.button("◀", key="btn_prev", use_container_width=True):
+        if st.button("◀", key="btn_prev", width='stretch'):
             st.session_state.carrusel_idx = (idx - 1) % n
             st.rerun()
     with c_banner:
@@ -239,7 +239,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
             <div style="font-size:10px;opacity:0.4;letter-spacing:2px;margin-top:8px">{dots}</div>
         </div>""")
     with c_next:
-        if st.button("▶", key="btn_next", use_container_width=True):
+        if st.button("▶", key="btn_next", width='stretch'):
             st.session_state.carrusel_idx = (idx + 1) % n
             st.rerun()
 
@@ -249,7 +249,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     col_iz, col_der = st.columns([2, 3])
 
     with col_iz:
-        st.altair_chart(_donut(exitosas, fallidas), use_container_width=True)
+        st.altair_chart(_donut(exitosas, fallidas), width='stretch')
         _mini_kpis(total_v, pct_exit, exitosas, fallidas)
         _productos(df_c)
 

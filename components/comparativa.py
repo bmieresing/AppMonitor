@@ -144,7 +144,7 @@ def _tabla_resumen(data: pd.DataFrame):
         .format({"Litros Hoy": "{:,.0f}", "PROM 3M": "{:,.0f}", "%": "{:.1f}%"})
         .apply(lambda col: [color_pct(v) for v in col], subset=["%"])
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width='stretch', hide_index=True)
 
 
 def mostrar_comparativa(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame):
@@ -166,7 +166,7 @@ def mostrar_comparativa(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame):
     col_graf, col_tabla = st.columns([3, 2])
     with col_graf:
         st.subheader("Litros hoy vs promedio 3 meses")
-        st.altair_chart(_grafico(data), use_container_width=True)
+        st.altair_chart(_grafico(data), width='stretch')
     with col_tabla:
         st.subheader("Resumen por chofer")
         _tabla_resumen(data)

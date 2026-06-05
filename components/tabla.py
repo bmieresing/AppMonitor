@@ -19,4 +19,4 @@ def mostrar_tabla(df: pd.DataFrame):
     if df.empty:
         st.warning("Sin datos para hoy.")
         return
-    st.dataframe(_estilo(df), use_container_width=True, hide_index=True)
+    st.dataframe(_estilo(df), width='stretch', hide_index=True)

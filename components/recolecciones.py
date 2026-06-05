@@ -44,7 +44,7 @@ def mostrar_recolecciones(df: pd.DataFrame):
     with col_chart:
         st.bar_chart(litros.set_index("Chofer")["Litros"])
     with col_tabla:
-        st.dataframe(litros, use_container_width=True, hide_index=True)
+        st.dataframe(litros, width='stretch', hide_index=True)
 
     st.divider()
 
@@ -57,4 +57,4 @@ def mostrar_recolecciones(df: pd.DataFrame):
         "whatsapp_asignado", "respuesta_whatsapp", "hora_respuesta_whatsapp",
         "Observaciones",
     ] if c in df.columns]
-    st.dataframe(df[cols], use_container_width=True, hide_index=True)
+    st.dataframe(df[cols], width='stretch', hide_index=True)

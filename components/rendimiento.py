@@ -106,7 +106,7 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         .configure_axis(grid=False)
     )
 
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
     # Tabla resumen
     st.divider()
@@ -132,4 +132,4 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
                  "% Exitosas": "{:.1f}%", "% Fallidas": "{:.1f}%"})
         .apply(_color_exitosas, subset=["% Exitosas"])
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width='stretch', hide_index=True)

@@ -55,7 +55,7 @@ def _header():
     """, unsafe_allow_html=True)
 
 
-def _kpis(df_rec: pd.DataFrame, data_comp: pd.DataFrame):
+def _kpis(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales: pd.DataFrame):
     litros_hoy = df_rec["Litros"].sum() if not df_rec.empty else 0
     n_choferes = df_rec["NombreChofer"].nunique() if "NombreChofer" in df_rec.columns else 0
     prom_por_ruta = litros_hoy / n_choferes if n_choferes > 0 else 0
@@ -67,8 +67,6 @@ def _kpis(df_rec: pd.DataFrame, data_comp: pd.DataFrame):
     prom_total = prom_stgo + prom_reg
     vs_pct = (litros_hoy / prom_total * 100) if prom_total > 0 else 0
 
-    # Usar todos los locales de rutas activas hoy (no solo los visitados)
-    df_locales = cargar_estado_locales()
     total_locales = len(df_locales)
     realizados = int((df_locales["Estado"] == "Realizado").sum()) if not df_locales.empty else 0
     pct_real = (realizados / total_locales * 100) if total_locales > 0 else 0
@@ -157,7 +155,7 @@ def _grafico_litros(data_comp: pd.DataFrame):
         st.info("Sin datos de litros vs esperado.")
         return
 
-    orden = data_comp.sort_values("LitrosHoy", ascending=True)["Chofer"].tolist()
+    orden = data_comp.sort_values("Prom", ascending=False)["Chofer"].tolist()
     max_x = max(data_comp["Prom"].max(), data_comp["LitrosHoy"].max()) * 1.12
 
     bg = (
@@ -198,11 +196,64 @@ def _grafico_litros(data_comp: pd.DataFrame):
         .configure_view(strokeWidth=0)
         .configure_axis(grid=False)
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
 
-def _grafico_locales(_df_rec: pd.DataFrame):
-    df_locales = cargar_estado_locales()
+def _grafico_litros_simple(df_rec: pd.DataFrame, df_locales: pd.DataFrame):
+    if df_locales.empty or "Chofer" not in df_locales.columns:
+        st.info("Sin datos de litros.")
+        return
+
+    empleados = cargar_empleados()
+    mapa = empleados.set_index("id")["nombre"] if not empleados.empty else pd.Series(dtype=str)
+
+    df_base = pd.DataFrame({"Chofer": df_locales["Chofer"].unique()})
+    df_base["NombreChofer"] = df_base["Chofer"].map(mapa).fillna(df_base["Chofer"].astype(str))
+
+    if not df_rec.empty and "Chofer" in df_rec.columns:
+        litros = df_rec.groupby("Chofer")["Litros"].sum().reset_index()
+    else:
+        litros = pd.DataFrame(columns=["Chofer", "Litros"])
+
+    data = (
+        df_base.merge(litros, on="Chofer", how="left")
+        .fillna({"Litros": 0})
+        .sort_values("Litros", ascending=True)
+    )
+    orden = data["NombreChofer"].tolist()
+    max_x = max(data["Litros"].max() * 1.15, 1)
+
+    bars = (
+        alt.Chart(data)
+        .mark_bar(color="#2d7a2d", height=10)
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden, title=None, axis=alt.Axis(labelFontSize=11)),
+            x=alt.X("Litros:Q", scale=alt.Scale(domain=[0, max_x]), title="Litros"),
+        )
+    )
+    label = (
+        alt.Chart(data)
+        .mark_text(align="left", dx=5, fontSize=11, fontWeight="bold", color="#1a472a")
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden),
+            x=alt.X("Litros:Q"),
+            text=alt.Text("Litros:Q", format=",.0f"),
+        )
+    )
+
+    chart = (
+        (bars + label)
+        .properties(
+            title=alt.TitleParams("LITROS RECOLECTADOS HOY", fontSize=12, fontWeight="bold", anchor="start"),
+            height=max(280, len(data) * 32),
+        )
+        .configure_view(strokeWidth=0)
+        .configure_axis(grid=False)
+    )
+    st.altair_chart(chart, width='stretch')
+
+
+def _grafico_locales(df_locales: pd.DataFrame, key_prefix: str = ""):
     if df_locales.empty or "Chofer" not in df_locales.columns:
         st.info("Sin datos de locales.")
         return
@@ -220,7 +271,7 @@ def _grafico_locales(_df_rec: pd.DataFrame):
         prioridades = sorted(df_locales["Prioridad"].dropna().unique().tolist())
         opciones += prioridades
 
-    filtro = st.selectbox("Prioridad", opciones, key="filtro_prioridad_locales")
+    filtro = st.selectbox("Prioridad", opciones, key=f"{key_prefix}filtro_prioridad_locales")
     if filtro != "Todos":
         df_locales = df_locales[df_locales["Prioridad"] == filtro]
 
@@ -229,7 +280,7 @@ def _grafico_locales(_df_rec: pd.DataFrame):
         .agg(Total=("ID_Local", "count"),
              Realizados=("Estado", lambda x: (x == "Realizado").sum()))
         .reset_index()
-        .sort_values("Realizados", ascending=True)
+        .sort_values("Total", ascending=False)
     )
 
     max_x = por_chofer["Total"].max() * 1.1
@@ -275,7 +326,7 @@ def _grafico_locales(_df_rec: pd.DataFrame):
         .configure_view(strokeWidth=0)
         .configure_axis(grid=False)
     )
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(chart, width='stretch')
 
 
 def _peores(data_comp: pd.DataFrame):
@@ -321,15 +372,20 @@ def _peores(data_comp: pd.DataFrame):
 def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales: pd.DataFrame):
     # % Litros por Zona desde Control Regiones
     df_reg = cargar_datos_regiones()
-    litros_zona: dict = {}
     prom_zona: dict = {}
     if not df_reg.empty and "Zona" in df_reg.columns:
         col_prom = next((c for c in df_reg.columns if "PROM" in c.upper()), None)
-        col_litros = next((c for c in df_reg.columns if "LITROS" in c.upper()), None)
-        if col_prom and col_litros:
+        if col_prom:
             for zona, grp in df_reg[df_reg["Zona"].notna()].groupby("Zona"):
                 prom_zona[zona] = grp[col_prom].sum()
-                litros_zona[zona] = grp[col_litros].sum()
+
+    # Litros actuales por CentroAcopio desde df_rec vía df_locales
+    litros_zona: dict = {}
+    if not df_rec.empty and not df_locales.empty and "CentroAcopio" in df_locales.columns and "Chofer" in df_locales.columns:
+        chofer_centro = df_locales.drop_duplicates("Chofer").set_index("Chofer")["CentroAcopio"]
+        df_tmp = df_rec.copy()
+        df_tmp["CentroAcopio"] = df_tmp["Chofer"].map(chofer_centro)
+        litros_zona = df_tmp.groupby("CentroAcopio")["Litros"].sum().to_dict()
 
     # % Locales por CentroAcopio (= Zona)
     local_stats = pd.DataFrame()
@@ -356,7 +412,8 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
             pct_litros = int(litros / prom * 100) if prom > 0 else 0
 
             fila_loc = local_stats[local_stats["CentroAcopio"] == centro] if not local_stats.empty else pd.DataFrame()
-            pct_loc = int(fila_loc["PctLocales"].iloc[0]) if not fila_loc.empty else 0
+            realizados_loc = int(fila_loc["Realizados"].iloc[0]) if not fila_loc.empty else 0
+            total_loc = int(fila_loc["Total"].iloc[0]) if not fila_loc.empty else 0
 
             cols[j].markdown(f"""
             <div style="border:1px solid #ddd;border-radius:6px;padding:7px 8px;text-align:center">
@@ -365,12 +422,12 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
                      title="{centro}">{centro}</div>
                 <div style="display:flex;justify-content:center;gap:10px">
                     <div>
-                        <div style="font-size:17px;font-weight:800;color:#1a472a">{pct_litros}%</div>
+                        <div style="font-size:15px;font-weight:800;color:#1a472a">{int(litros):,} / {int(prom):,}</div>
                         <div style="font-size:9px;color:#888">Litros</div>
                     </div>
                     <div style="border-left:1px solid #eee"></div>
                     <div>
-                        <div style="font-size:17px;font-weight:800;color:#1a472a">{pct_loc}%</div>
+                        <div style="font-size:15px;font-weight:800;color:#1a472a">{realizados_loc} / {total_loc}</div>
                         <div style="font-size:9px;color:#888">Locales</div>
                     </div>
                 </div>
@@ -378,34 +435,56 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
             """, unsafe_allow_html=True)
 
 
-def mostrar_dashboard(df_sheets: pd.DataFrame, df_rec: pd.DataFrame):
+def mostrar_dashboard(df_sheets: pd.DataFrame, df_rec: pd.DataFrame, choferes_filter: set, key_prefix: str = "", mostrar_centros: bool = True, mostrar_litros: bool = True, mostrar_peores: bool = True, mostrar_litros_simple: bool = False):
     data_comp = pd.DataFrame()
     if not df_sheets.empty and not df_rec.empty:
         result = _preparar_datos(df_sheets, df_rec)
         data_comp = result if result is not None else pd.DataFrame()
 
     df_locales = cargar_estado_locales()
+    df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
 
     _css()
     _header()
-    _kpis(df_rec, data_comp)
+    _kpis(df_rec, data_comp, df_locales)
     st.divider()
 
     # Fila 2: dos gráficos con scroll
-    c_lit, c_loc = st.columns(2)
-    altura_locales = max(300, len(data_comp) * 26 + 60) if not data_comp.empty else 300
-    with c_lit:
-        _grafico_litros(data_comp)
-    with c_loc:
-        with st.container(height=altura_locales):
-            _grafico_locales(df_rec)
+    if mostrar_litros:
+        c_lit, c_loc = st.columns(2)
+        altura_locales = max(300, len(data_comp) * 26 + 60) if not data_comp.empty else 300
+        with c_lit:
+            _grafico_litros(data_comp)
+        with c_loc:
+            with st.container(height=altura_locales):
+                _grafico_locales(df_locales, key_prefix=key_prefix)
+    elif mostrar_centros:
+        if mostrar_litros_simple:
+            _grafico_litros_simple(df_rec, df_locales)
+        c_loc, c_centros = st.columns(2)
+        with c_loc:
+            with st.container(height=400):
+                _grafico_locales(df_locales, key_prefix=key_prefix)
+        with c_centros:
+            _desempeno_centros(df_rec, pd.DataFrame(), df_locales)
+    else:
+        if mostrar_litros_simple:
+            _grafico_litros_simple(df_rec, df_locales)
+        with st.container(height=400):
+            _grafico_locales(df_locales, key_prefix=key_prefix)
 
     st.divider()
 
-    # Fila 3: 5 peores izquierda + centros derecha
-    c_peores, c_centros = st.columns([2, 3])
-    with c_peores:
+    # Fila 3
+    if mostrar_centros and mostrar_peores and mostrar_litros:
+        c_peores, c_centros = st.columns([2, 3])
+        with c_peores:
+            st.markdown("**🔴 5 PEORES CHOFERES**")
+            _peores(data_comp)
+        with c_centros:
+            _desempeno_centros(df_rec, pd.DataFrame(), df_locales)
+    elif mostrar_centros and mostrar_litros:
+        _desempeno_centros(df_rec, pd.DataFrame(), df_locales)
+    elif mostrar_peores:
         st.markdown("**🔴 5 PEORES CHOFERES**")
         _peores(data_comp)
-    with c_centros:
-        _desempeno_centros(df_rec, pd.DataFrame(), df_locales)
