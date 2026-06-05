@@ -1,12 +1,16 @@
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, date
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Santiago")
 
 from connectors.sheets import cargar_datos
-from components.tabla import mostrar_tabla
+from connectors.mysql import cargar_recolecciones
+from components.recolecciones import resolver_recolecciones
+from components.dashboard import mostrar_dashboard
+from components.rendimiento import mostrar_rendimiento
+from components.carrusel import mostrar_carrusel
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
@@ -29,16 +33,17 @@ if not st.session_state.autenticado:
 intervalo = int(st.secrets.get("refresh_interval_seconds", 300)) * 1000
 st_autorefresh(interval=intervalo, key="refresh")
 
-# Header
-ahora = datetime.now(TZ)
-col_titulo, col_hora = st.columns([3, 1])
-col_titulo.title(f"App Monitor — {ahora.strftime('%d/%m/%Y')}")
-col_hora.markdown(
-    f"<div style='text-align:right; padding-top:16px; color:gray'>"
-    f"Actualizado: {ahora.strftime('%H:%M:%S')}</div>",
-    unsafe_allow_html=True,
-)
+# Cargar datos una sola vez
+df_sheets = cargar_datos()
+df_rec = resolver_recolecciones(cargar_recolecciones())
 
-# Tabla del día
-df = cargar_datos()
-mostrar_tabla(df)
+tab_dashboard, tab_rendimiento, tab_carrusel = st.tabs(["Dashboard", "Rendimiento", "Carrusel"])
+
+with tab_dashboard:
+    mostrar_dashboard(df_sheets, df_rec)
+
+with tab_rendimiento:
+    mostrar_rendimiento(df_rec)
+
+with tab_carrusel:
+    mostrar_carrusel(df_rec)

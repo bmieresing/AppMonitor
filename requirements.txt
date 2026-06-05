@@ -3,3 +3,5 @@ streamlit-autorefresh
 pandas
 gspread
 google-auth
+pymysql
+psycopg2-binary
