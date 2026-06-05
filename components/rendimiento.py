@@ -123,8 +123,8 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         resumen.style
         .format({"N Exitosas": "{:.0f}", "N Fallidas": "{:.0f}",
                  "% Exitosas": "{:.1f}%", "% Fallidas": "{:.1f}%"})
-        .applymap(lambda v: "color:#155724;font-weight:bold" if v >= 80 else
-                            ("color:#721c24;font-weight:bold" if v < 50 else ""),
-                  subset=["% Exitosas"])
+        .map(lambda v: "color:#155724;font-weight:bold" if v >= 80 else
+                       ("color:#721c24;font-weight:bold" if v < 50 else ""),
+             subset=["% Exitosas"])
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
