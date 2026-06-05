@@ -110,14 +110,14 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     # Tabla resumen
     st.divider()
-    resumen = (
-        stats.pivot_table(index="NombreChofer", columns="Resultado",
-                          values=["N", "Pct"], aggfunc="sum")
-        .fillna(0)
-        .reset_index()
-    )
-    resumen.columns = ["Chofer", "N Exitosas", "N Fallidas", "% Exitosas", "% Fallidas"]
-    resumen = resumen.sort_values("% Exitosas", ascending=False)
+    base = df.groupby("NombreChofer").apply(lambda g: pd.Series({
+        "N Exitosas":  int((g["Resultado"] == "Exitosa").sum()),
+        "N Fallidas":  int((g["Resultado"] == "Fallida").sum()),
+        "Total":       len(g),
+    })).reset_index().rename(columns={"NombreChofer": "Chofer"})
+    base["% Exitosas"] = (base["N Exitosas"] / base["Total"] * 100).round(1)
+    base["% Fallidas"] = (base["N Fallidas"] / base["Total"] * 100).round(1)
+    resumen = base[["Chofer", "N Exitosas", "N Fallidas", "% Exitosas", "% Fallidas"]].sort_values("% Exitosas", ascending=False)
 
     styled = (
         resumen.style
