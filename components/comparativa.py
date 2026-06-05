@@ -124,7 +124,7 @@ def _tabla_resumen(data: pd.DataFrame):
     styled = (
         tabla.style
         .format({"Litros Hoy": "{:,.0f}", "PROM 3M": "{:,.0f}", "%": "{:.1f}%"})
-        .map(color_pct, subset=["%"])
+        .apply(lambda col: [color_pct(v) for v in col], subset=["%"])
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
 

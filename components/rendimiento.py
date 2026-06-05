@@ -119,12 +119,17 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
     base["% Fallidas"] = (base["N Fallidas"] / base["Total"] * 100).round(1)
     resumen = base[["Chofer", "N Exitosas", "N Fallidas", "% Exitosas", "% Fallidas"]].sort_values("% Exitosas", ascending=False)
 
+    def _color_exitosas(col):
+        return [
+            "color:#155724;font-weight:bold" if v >= 80 else
+            ("color:#721c24;font-weight:bold" if v < 50 else "")
+            for v in col
+        ]
+
     styled = (
         resumen.style
         .format({"N Exitosas": "{:.0f}", "N Fallidas": "{:.0f}",
                  "% Exitosas": "{:.1f}%", "% Fallidas": "{:.1f}%"})
-        .map(lambda v: "color:#155724;font-weight:bold" if v >= 80 else
-                       ("color:#721c24;font-weight:bold" if v < 50 else ""),
-             subset=["% Exitosas"])
+        .apply(_color_exitosas, subset=["% Exitosas"])
     )
     st.dataframe(styled, use_container_width=True, hide_index=True)
