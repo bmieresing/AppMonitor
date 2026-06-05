@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+from connectors.mysql import cargar_usuarios_vehiculos
+from connectors.postgres import cargar_empleados, cargar_vehiculos
 
 
 def _preparar_datos(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame) -> pd.DataFrame | None:
@@ -17,25 +19,41 @@ def _preparar_datos(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame) -> pd.DataF
     prom_df = prom_df[[col_patente, "Prom"]].rename(columns={col_patente: "Patente"})
     prom_df = prom_df[prom_df["Prom"] > 0]
 
-    chofer_por_patente = (
-        df_mysql[["Patente_Real", "NombreChofer"]]
-        .dropna(subset=["Patente_Real"])
-        .drop_duplicates("Patente_Real")
-        .rename(columns={"Patente_Real": "Patente"})
-    )
+    # Resolver Patente → NombreChofer desde Usuarios (incluye choferes sin visitas aún)
+    usuarios = cargar_usuarios_vehiculos()
+    vehiculos = cargar_vehiculos()
+    empleados = cargar_empleados()
+    chofer_por_patente = pd.DataFrame()
+    if not usuarios.empty and not vehiculos.empty and not empleados.empty:
+        mapa_placa = vehiculos.set_index("id")["plate"]
+        mapa_nombre = empleados.set_index("id")["nombre"]
+        usuarios = usuarios.copy()
+        usuarios["Patente"] = usuarios["Vehiculo"].map(mapa_placa)
+        usuarios["NombreChofer"] = usuarios["Chofer"].map(mapa_nombre)
+        chofer_por_patente = (
+            usuarios[["Patente", "NombreChofer"]]
+            .dropna()
+            .drop_duplicates("Patente")
+        )
+
     litros_por_patente = (
         df_mysql[df_mysql["Litros"] > 0]
         .groupby("Patente_Real")["Litros"]
         .sum()
         .reset_index()
         .rename(columns={"Patente_Real": "Patente", "Litros": "LitrosHoy"})
-    )
+    ) if not df_mysql.empty and "Patente_Real" in df_mysql.columns else pd.DataFrame()
 
-    data = (
-        prom_df
-        .merge(chofer_por_patente, on="Patente", how="left")
-        .merge(litros_por_patente, on="Patente", how="left")
-    )
+    data = prom_df.copy()
+    if not chofer_por_patente.empty:
+        data = data.merge(chofer_por_patente, on="Patente", how="left")
+    else:
+        data["NombreChofer"] = None
+    if not litros_por_patente.empty:
+        data = data.merge(litros_por_patente, on="Patente", how="left")
+    else:
+        data["LitrosHoy"] = 0
+
     data["LitrosHoy"] = data["LitrosHoy"].fillna(0)
     data["Chofer"] = data["NombreChofer"].fillna(data["Patente"])
     data["Pct"] = (data["LitrosHoy"] / data["Prom"] * 100).round(1)

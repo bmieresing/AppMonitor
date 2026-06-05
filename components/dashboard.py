@@ -28,6 +28,10 @@ def _css():
         }
         div[data-testid="stMetric"] div[data-testid="stMetricDelta"] {
             font-size: 11px !important;
+            color: #444 !important;
+        }
+        div[data-testid="stMetricDelta"] svg {
+            display: none !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -61,7 +65,7 @@ def _kpis(df_rec: pd.DataFrame, data_comp: pd.DataFrame):
     col_prom_reg = next((c for c in df_reg.columns if "PROM" in c.upper()), None)
     prom_reg = df_reg[col_prom_reg].sum() if (not df_reg.empty and col_prom_reg) else 0
     prom_total = prom_stgo + prom_reg
-    vs_pct = ((litros_hoy - prom_total) / prom_total * 100) if prom_total > 0 else 0
+    vs_pct = (litros_hoy / prom_total * 100) if prom_total > 0 else 0
 
     # Usar todos los locales de rutas activas hoy (no solo los visitados)
     df_locales = cargar_estado_locales()
@@ -88,15 +92,20 @@ def _kpis(df_rec: pd.DataFrame, data_comp: pd.DataFrame):
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("💧 LITROS RECOLECTADOS HOY", f"{litros_hoy:,.0f} L",
-              delta=f"Promedio por chofer: {prom_por_ruta:,.0f} L")
-    c2.metric("📊 VS. ESPERADO (PROM. RUTA)", f"{vs_pct:+.1f}%",
-              delta=f"Esperado: {prom_total:,.0f} L")
+              delta=f"🚛 Promedio por chofer: {prom_por_ruta:,.0f} L",
+              delta_color="off")
+    c2.metric("📊 VS. ESPERADO (PROM. RUTA)", f"{vs_pct:.1f}%",
+              delta=f"🎯 Esperado: {prom_total:,.0f} L",
+              delta_color="off")
     c3.metric("🏪 LOCALES ASIGNADOS", str(total_locales),
-              delta=f"Realizados: {realizados} ({pct_real:.0f}%)")
+              delta=f"✅ Realizados: {realizados} ({pct_real:.0f}%)",
+              delta_color="off")
     c4.metric("⭐ PRIORIDAD ALTA", str(total_alta),
-              delta=f"Realizados: {realizados_alta} ({pct_alta:.0f}%)")
+              delta=f"✅ Realizados: {realizados_alta} ({pct_alta:.0f}%)",
+              delta_color="off")
     c5.metric("🚦 RUTAS CERRADAS EN LA APP", f"{cerradas} / {n_choferes}",
-              delta=f"{n_choferes - cerradas} pendientes")
+              delta=f"⏳ {n_choferes - cerradas} pendientes",
+              delta_color="off")
 
 
 def _bullet_chart(data: pd.DataFrame, col_y: str, col_pct: str, titulo: str, altura: int = 320, max_x: int | None = None) -> alt.Chart:
@@ -220,16 +229,53 @@ def _grafico_locales(_df_rec: pd.DataFrame):
         .agg(Total=("ID_Local", "count"),
              Realizados=("Estado", lambda x: (x == "Realizado").sum()))
         .reset_index()
+        .sort_values("Realizados", ascending=True)
     )
-    por_chofer["Pct"] = (por_chofer["Realizados"] / por_chofer["Total"] * 100).round(1)
 
-    st.altair_chart(
-        _bullet_chart(por_chofer, "NombreChofer", "Pct",
-                      f"LOCALES ASIGNADOS VS REALIZADOS (%) — {filtro}",
-                      altura=max(300, len(por_chofer) * 28),
-                      max_x=100),
-        use_container_width=True,
+    max_x = por_chofer["Total"].max() * 1.1
+    orden = por_chofer["NombreChofer"].tolist()
+
+    bg = (
+        alt.Chart(por_chofer)
+        .mark_bar(color="#a8d5a2", height=10)
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden, title=None,
+                    axis=alt.Axis(labelFontSize=10)),
+            x=alt.X("Total:Q", scale=alt.Scale(domain=[0, max_x]),
+                    title="Locales"),
+        )
     )
+    real = (
+        alt.Chart(por_chofer)
+        .mark_bar(color="#2d7a2d", height=6)
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden),
+            x=alt.X("Realizados:Q", scale=alt.Scale(domain=[0, max_x])),
+        )
+    )
+    label = (
+        alt.Chart(por_chofer)
+        .mark_text(align="left", dx=4, fontSize=10, fontWeight="bold", color="#1a472a")
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden),
+            x=alt.X("Total:Q"),
+            text=alt.Text("Realizados:Q", format=".0f"),
+        )
+    )
+
+    chart = (
+        (bg + real + label)
+        .properties(
+            title=alt.TitleParams(
+                f"LOCALES ASIGNADOS VS REALIZADOS — {filtro}",
+                fontSize=12, fontWeight="bold", anchor="start"
+            ),
+            height=max(300, len(por_chofer) * 28),
+        )
+        .configure_view(strokeWidth=0)
+        .configure_axis(grid=False)
+    )
+    st.altair_chart(chart, use_container_width=True)
 
 
 def _peores(data_comp: pd.DataFrame):
