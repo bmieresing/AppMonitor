@@ -36,13 +36,18 @@ def _preparar_datos(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame) -> pd.DataF
             .drop_duplicates("Patente")
         )
 
+    _excluir = {"Latas", "Desengrasante"}
+    df_mysql_lit = (
+        df_mysql[~df_mysql["Producto"].isin(_excluir)]
+        if "Producto" in df_mysql.columns else df_mysql
+    )
     litros_por_patente = (
-        df_mysql[df_mysql["Litros"] > 0]
+        df_mysql_lit[df_mysql_lit["Litros"] > 0]
         .groupby("Patente_Real")["Litros"]
         .sum()
         .reset_index()
         .rename(columns={"Patente_Real": "Patente", "Litros": "LitrosHoy"})
-    ) if not df_mysql.empty and "Patente_Real" in df_mysql.columns else pd.DataFrame()
+    ) if not df_mysql_lit.empty and "Patente_Real" in df_mysql_lit.columns else pd.DataFrame()
 
     data = prom_df.copy()
     if not chofer_por_patente.empty:

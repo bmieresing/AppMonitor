@@ -12,7 +12,8 @@ from connectors.postgres import cargar_vehiculos
 from components.recolecciones import resolver_recolecciones
 from components.dashboard import mostrar_dashboard
 from components.rendimiento import mostrar_rendimiento
-from components.carrusel import mostrar_carrusel
+from components.carrusel import mostrar_carrusel, mostrar_carrusel_zonas
+from components.tab_recolecciones import mostrar_tab_recolecciones
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
@@ -58,21 +59,27 @@ choferes_reg   = choferes_todos - choferes_stgo
 df_rec_stgo = df_rec[df_rec["Chofer"].isin(choferes_stgo)].copy() if "Chofer" in df_rec.columns else pd.DataFrame()
 df_rec_reg  = df_rec[df_rec["Chofer"].isin(choferes_reg)].copy()  if "Chofer" in df_rec.columns else pd.DataFrame()
 
-tab_global, tab_stgo, tab_reg, tab_rendimiento, tab_carrusel = st.tabs([
-    "Global", "Santiago", "Regiones", "Rendimiento", "Carrusel"
+tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz = st.tabs([
+    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas"
 ])
 
 with tab_global:
-    mostrar_dashboard(df_sheets, df_rec, key_prefix="global_", choferes_filter=choferes_todos)
+    mostrar_dashboard(df_sheets, df_rec, key_prefix="global_", choferes_filter=choferes_todos, tab_nombre="Global", mostrar_donuts=True, mostrar_peores=False)
 
 with tab_stgo:
-    mostrar_dashboard(df_sheets, df_rec_stgo, key_prefix="stgo_", mostrar_centros=False, choferes_filter=choferes_stgo)
+    mostrar_dashboard(df_sheets, df_rec_stgo, key_prefix="stgo_", mostrar_centros=False, choferes_filter=choferes_stgo, tab_nombre="Santiago", mostrar_donuts=True, mostrar_peores=False)
 
 with tab_reg:
-    mostrar_dashboard(df_regiones, df_rec_reg, key_prefix="reg_", choferes_filter=choferes_reg, mostrar_litros=False, mostrar_peores=False, mostrar_litros_simple=True)
+    mostrar_dashboard(df_regiones, df_rec_reg, key_prefix="reg_", choferes_filter=choferes_reg, mostrar_litros=False, mostrar_peores=False, mostrar_litros_simple=True, mostrar_centros=False, tab_nombre="Regiones", mostrar_donuts=True)
+
+with tab_rec_tab:
+    mostrar_tab_recolecciones(df_rec)
 
 with tab_rendimiento:
     mostrar_rendimiento(df_rec)
 
 with tab_carrusel:
     mostrar_carrusel(df_rec)
+
+with tab_cz:
+    mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg)

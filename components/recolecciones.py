@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from connectors.postgres import cargar_empleados, cargar_vehiculos
+from connectors.postgres import cargar_empleados, cargar_vehiculos, cargar_productos
 
 
 def _resolver_nombre(df: pd.DataFrame, col_id: str, lookup: pd.DataFrame, col_nuevo: str) -> pd.DataFrame:
@@ -18,10 +18,12 @@ def resolver_recolecciones(df: pd.DataFrame) -> pd.DataFrame:
         return df
     empleados = cargar_empleados()
     vehiculos = cargar_vehiculos().rename(columns={"plate": "nombre"})
+    productos = cargar_productos().rename(columns={"name": "nombre"})
     df = _resolver_nombre(df, "Chofer", empleados, "NombreChofer")
     df = _resolver_nombre(df, "Peoneta1", empleados, "NombrePeoneta1")
     df = _resolver_nombre(df, "Peoneta2", empleados, "NombrePeoneta2")
     df = _resolver_nombre(df, "Patente", vehiculos, "Patente_Real")
+    df = _resolver_nombre(df, "idProducto", productos, "Producto")
     return df
 
 

@@ -3,8 +3,12 @@ import pandas as pd
 import altair as alt
 from streamlit_autorefresh import st_autorefresh
 from connectors.postgres import cargar_productos, cargar_razones
+from connectors.mysql import cargar_estado_locales
+from connectors.sheets import cargar_datos, cargar_datos_regiones
+from components.comparativa import _preparar_datos
 
 INTERVALO_SEG = 10
+INTERVALO_ZONAS_SEG = 20
 
 
 def _donut(exitosas: int, fallidas: int) -> alt.Chart:
@@ -169,6 +173,139 @@ def _productos(df_c: pd.DataFrame):
     </div>""")
 
 
+def _global_strip(df_rec: pd.DataFrame):
+    litros_hoy = df_rec["Litros"].sum() if not df_rec.empty else 0
+    n_choferes = df_rec["NombreChofer"].nunique() if "NombreChofer" in df_rec.columns else 0
+    prom_por_ruta = litros_hoy / n_choferes if n_choferes > 0 else 0
+
+    df_sheets = cargar_datos()
+    data_comp = pd.DataFrame()
+    if not df_sheets.empty and not df_rec.empty:
+        result = _preparar_datos(df_sheets, df_rec)
+        data_comp = result if result is not None else pd.DataFrame()
+    prom_stgo = data_comp["Prom"].sum() if not data_comp.empty else 0
+    df_reg = cargar_datos_regiones()
+    col_prom_reg = next((c for c in df_reg.columns if "PROM" in c.upper()), None)
+    prom_reg = df_reg[col_prom_reg].sum() if (not df_reg.empty and col_prom_reg) else 0
+    prom_total = prom_stgo + prom_reg
+    vs_pct = (litros_hoy / prom_total * 100) if prom_total > 0 else 0
+
+    df_locales = cargar_estado_locales()
+    total_locales = len(df_locales)
+    realizados = int((df_locales["Estado"] == "Realizado").sum()) if not df_locales.empty else 0
+    pct_real = (realizados / total_locales * 100) if total_locales > 0 else 0
+
+    if not df_locales.empty and "Prioridad" in df_locales.columns:
+        df_alta = df_locales[df_locales["Prioridad"].str.upper().str.contains("ALTA", na=False)]
+        total_alta = len(df_alta)
+        realizados_alta = int((df_alta["Estado"] == "Realizado").sum())
+        pct_alta = (realizados_alta / total_alta * 100) if total_alta > 0 else 0
+    else:
+        total_alta = realizados_alta = pct_alta = 0
+
+    if "FechaObservacion" in df_rec.columns and "NombreChofer" in df_rec.columns:
+        cerradas = int(
+            df_rec.groupby("NombreChofer")["FechaObservacion"]
+            .apply(lambda x: x.notna().any())
+            .sum()
+        )
+    else:
+        cerradas = 0
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("💧 LITROS RECOLECTADOS HOY", f"{litros_hoy:,.0f} L",
+              delta=f"🚛 Promedio por chofer: {prom_por_ruta:,.0f} L",
+              delta_color="off")
+    c2.metric("📊 VS. ESPERADO (PROM. RUTA)", f"{vs_pct:.1f}%",
+              delta=f"🎯 Esperado: {prom_total:,.0f} L",
+              delta_color="off")
+    c3.metric("🏪 LOCALES ASIGNADOS", str(total_locales),
+              delta=f"✅ Realizados: {realizados} ({pct_real:.0f}%)",
+              delta_color="off")
+    c4.metric("⭐ PRIORIDAD ALTA", str(total_alta),
+              delta=f"✅ Realizados: {realizados_alta} ({pct_alta:.0f}%)",
+              delta_color="off")
+    c5.metric("🚦 RUTAS CERRADAS EN LA APP", f"{cerradas} / {n_choferes}",
+              delta=f"⏳ {n_choferes - cerradas} pendientes",
+              delta_color="off")
+
+
+def mostrar_carrusel_zonas(
+    df_sheets: pd.DataFrame,
+    df_rec: pd.DataFrame,
+    df_rec_stgo: pd.DataFrame,
+    df_rec_reg: pd.DataFrame,
+    df_regiones: pd.DataFrame,
+    choferes_todos: set,
+    choferes_stgo: set,
+    choferes_reg: set,
+):
+    from components.dashboard import mostrar_dashboard
+
+    VISTAS = [
+        ("Global", dict(
+            df_sheets=df_sheets, df_rec=df_rec,
+            key_prefix="cz_global_", choferes_filter=choferes_todos,
+            tab_nombre="Global", mostrar_donuts=True, mostrar_peores=False,
+        )),
+        ("Santiago", dict(
+            df_sheets=df_sheets, df_rec=df_rec_stgo,
+            key_prefix="cz_stgo_", mostrar_centros=False,
+            choferes_filter=choferes_stgo, tab_nombre="Santiago",
+            mostrar_donuts=True, mostrar_peores=False,
+        )),
+        ("Regiones", dict(
+            df_sheets=df_regiones, df_rec=df_rec_reg,
+            key_prefix="cz_reg_", mostrar_litros=False,
+            mostrar_peores=False, mostrar_litros_simple=True,
+            mostrar_centros=False,
+            choferes_filter=choferes_reg, tab_nombre="Regiones",
+            mostrar_donuts=True,
+        )),
+    ]
+    n = len(VISTAS)
+
+    for key, val in [("cz_idx", 0), ("cz_tick_prev", 0), ("cz_auto", True)]:
+        if key not in st.session_state:
+            st.session_state[key] = val
+
+    idx = st.session_state.cz_idx % n
+
+    mostrar_dashboard(**VISTAS[idx][1])
+
+    c_prev, c_ind, c_next, c_auto = st.columns([1, 8, 1, 3])
+    with c_prev:
+        if st.button("◀", key="cz_prev", width='stretch'):
+            st.session_state.cz_idx = (idx - 1) % n
+            st.rerun()
+    with c_ind:
+        dots = "  ".join(
+            f'<span style="color:#1a472a;font-size:18px">⬤</span>' if i == idx
+            else f'<span style="color:#ccc;font-size:18px">⬤</span>'
+            for i in range(n)
+        )
+        labels = "  ·  ".join(
+            f'<strong>{v[0]}</strong>' if i == idx else f'<span style="color:#aaa">{v[0]}</span>'
+            for i, v in enumerate(VISTAS)
+        )
+        st.markdown(
+            f'<div style="text-align:center;padding:4px 0">{dots}<br>'
+            f'<span style="font-size:12px">{labels}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with c_next:
+        if st.button("▶", key="cz_next", width='stretch'):
+            st.session_state.cz_idx = (idx + 1) % n
+            st.rerun()
+    with c_auto:
+        auto = st.toggle("Auto-avanzar", value=True, key="cz_auto")
+        if auto:
+            tick = st_autorefresh(interval=INTERVALO_ZONAS_SEG * 1000, key="cz_tick")
+            if tick != st.session_state.cz_tick_prev:
+                st.session_state.cz_idx = (st.session_state.cz_idx + 1) % n
+                st.session_state.cz_tick_prev = tick
+
+
 def mostrar_carrusel(df_rec: pd.DataFrame):
     if df_rec.empty or "NombreChofer" not in df_rec.columns:
         st.warning("Sin datos de recolecciones para hoy.")
@@ -186,19 +323,39 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
             productos.set_index("id")["name"]
         ).fillna("Sin producto")
 
-    for key, val in [("carrusel_idx", 0), ("carrusel_tick_prev", 0), ("carrusel_paused", False)]:
-        if key not in st.session_state:
-            st.session_state[key] = val
+    if "carrusel_idx" not in st.session_state:
+        st.session_state.carrusel_idx = 0
+    if "carrusel_tick_prev" not in st.session_state:
+        st.session_state.carrusel_tick_prev = 0
+    if "slicer_chofer" not in st.session_state:
+        st.session_state.slicer_chofer = choferes[0]
 
-    auto = st.toggle("Auto-avanzar cada 10 seg", value=False, key="carrusel_auto")
+    # Auto-avanzar sincroniza el slicer
+    c_slicer, c_toggle = st.columns([8, 1])
+    with c_toggle:
+        auto = st.toggle("Auto", value=False, key="carrusel_auto")
     if auto:
         tick = st_autorefresh(interval=INTERVALO_SEG * 1000, key="carrusel_tick")
         if tick != st.session_state.carrusel_tick_prev:
             st.session_state.carrusel_idx = (st.session_state.carrusel_idx + 1) % n
+            st.session_state.slicer_chofer = choferes[st.session_state.carrusel_idx]
             st.session_state.carrusel_tick_prev = tick
 
-    idx = st.session_state.carrusel_idx % n
-    chofer = choferes[idx]
+    # Slicer — pill por chofer
+    with c_slicer:
+        selected = st.pills(
+            "Chofer",
+            options=choferes,
+            key="slicer_chofer",
+            label_visibility="collapsed",
+        )
+
+    if selected and selected in choferes:
+        chofer = selected
+        st.session_state.carrusel_idx = choferes.index(selected)
+    else:
+        chofer = choferes[st.session_state.carrusel_idx % n]
+
     df_c = df_rec[df_rec["NombreChofer"] == chofer].copy()
 
     exitosas   = int((df_c["Litros"] > 0).sum())
@@ -206,42 +363,28 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     total_v    = exitosas + fallidas
     pct_exit   = f"{exitosas/total_v*100:.0f}%" if total_v > 0 else "—"
     litros_tot = int(df_c["Litros"].sum())
-    dots       = "".join("⬤ " if i == idx else "○ " for i in range(min(n, 20)))
 
-    # ── Navegación + Banner ──────────────────────────────────────
-    c_prev, c_banner, c_next = st.columns([1, 14, 1])
-    with c_prev:
-        if st.button("◀", key="btn_prev", width='stretch'):
-            st.session_state.carrusel_idx = (idx - 1) % n
-            st.rerun()
-    with c_banner:
-        st.html(f"""
-        <div style="background:linear-gradient(135deg,#1a472a,#1a6b8a);border-radius:14px;
-                    padding:20px 32px;color:white;text-align:center">
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;
-                        opacity:0.7;margin-bottom:6px">Chofer</div>
-            <div style="display:flex;justify-content:center;align-items:center;gap:32px;
-                        flex-wrap:wrap">
-                <span style="font-size:46px;font-weight:900;line-height:1">{chofer}</span>
-                <div style="width:2px;height:50px;background:rgba(255,255,255,0.3);
-                            border-radius:2px"></div>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <span style="font-size:32px;line-height:1">💧</span>
-                    <div>
-                        <div style="font-size:10px;opacity:0.65;letter-spacing:1px">LITROS HOY</div>
-                        <div style="display:flex;align-items:baseline;gap:4px">
-                            <span style="font-size:46px;font-weight:900;line-height:1">{litros_tot:,}</span>
-                            <span style="font-size:16px;opacity:0.75">L</span>
-                        </div>
+    # ── Banner ───────────────────────────────────────────────────
+    st.html(f"""
+    <div style="background:linear-gradient(135deg,#1a472a,#1a6b8a);border-radius:14px;
+                padding:20px 32px;color:white;text-align:center;margin-top:6px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;
+                    opacity:0.7;margin-bottom:6px">Chofer</div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:32px;flex-wrap:wrap">
+            <span style="font-size:46px;font-weight:900;line-height:1">{chofer}</span>
+            <div style="width:2px;height:50px;background:rgba(255,255,255,0.3);border-radius:2px"></div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:32px;line-height:1">💧</span>
+                <div>
+                    <div style="font-size:10px;opacity:0.65;letter-spacing:1px">LITROS HOY</div>
+                    <div style="display:flex;align-items:baseline;gap:4px">
+                        <span style="font-size:46px;font-weight:900;line-height:1">{litros_tot:,}</span>
+                        <span style="font-size:16px;opacity:0.75">L</span>
                     </div>
                 </div>
             </div>
-            <div style="font-size:10px;opacity:0.4;letter-spacing:2px;margin-top:8px">{dots}</div>
-        </div>""")
-    with c_next:
-        if st.button("▶", key="btn_next", width='stretch'):
-            st.session_state.carrusel_idx = (idx + 1) % n
-            st.rerun()
+        </div>
+    </div>""")
 
     st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
@@ -251,7 +394,6 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     with col_iz:
         st.altair_chart(_donut(exitosas, fallidas), width='stretch')
         _mini_kpis(total_v, pct_exit, exitosas, fallidas)
-        _productos(df_c)
 
     with col_der:
         c_tops, c_razones = st.columns([1, 1])
@@ -260,3 +402,4 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
             _top5(df_c, "⚠️ Top 5 — Menos litros", ascendente=True,  color="#e67e22")
         with c_razones:
             _razones_fallo(df_c)
+            _productos(df_c)
