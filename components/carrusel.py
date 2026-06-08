@@ -298,7 +298,7 @@ def mostrar_carrusel_zonas(
             st.session_state.cz_idx = (idx + 1) % n
             st.rerun()
     with c_auto:
-        auto = st.toggle("Auto-avanzar", value=True, key="cz_auto")
+        auto = st.toggle("Auto-avanzar", key="cz_auto")
         if auto:
             tick = st_autorefresh(interval=INTERVALO_ZONAS_SEG * 1000, key="cz_tick")
             if tick != st.session_state.cz_tick_prev:
@@ -323,14 +323,11 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
             productos.set_index("id")["name"]
         ).fillna("Sin producto")
 
-    if "carrusel_idx" not in st.session_state:
-        st.session_state.carrusel_idx = 0
-    if "carrusel_tick_prev" not in st.session_state:
-        st.session_state.carrusel_tick_prev = 0
-    if "slicer_chofer" not in st.session_state:
-        st.session_state.slicer_chofer = choferes[0]
+    for key, val in [("carrusel_idx", 0), ("carrusel_tick_prev", 0)]:
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-    # Auto-avanzar sincroniza el slicer
+    # Auto-avanzar
     c_slicer, c_toggle = st.columns([8, 1])
     with c_toggle:
         auto = st.toggle("Auto", value=False, key="carrusel_auto")
@@ -338,23 +335,28 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
         tick = st_autorefresh(interval=INTERVALO_SEG * 1000, key="carrusel_tick")
         if tick != st.session_state.carrusel_tick_prev:
             st.session_state.carrusel_idx = (st.session_state.carrusel_idx + 1) % n
-            st.session_state.slicer_chofer = choferes[st.session_state.carrusel_idx]
             st.session_state.carrusel_tick_prev = tick
+
+    idx = st.session_state.carrusel_idx % n
 
     # Slicer — pill por chofer
     with c_slicer:
         selected = st.pills(
             "Chofer",
             options=choferes,
-            key="slicer_chofer",
+            default=choferes[idx],
             label_visibility="collapsed",
+            key="slicer_chofer",
         )
 
     if selected and selected in choferes:
+        new_idx = choferes.index(selected)
+        if new_idx != st.session_state.carrusel_idx:
+            st.session_state.carrusel_idx = new_idx
+            st.rerun()
         chofer = selected
-        st.session_state.carrusel_idx = choferes.index(selected)
     else:
-        chofer = choferes[st.session_state.carrusel_idx % n]
+        chofer = choferes[idx]
 
     df_c = df_rec[df_rec["NombreChofer"] == chofer].copy()
 
