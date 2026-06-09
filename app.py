@@ -75,23 +75,17 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-tab_global, tab_stgo, tab_stgo_cards, tab_reg, tab_reg_cards, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz, tab_params = st.tabs([
-    "Global", "Santiago", "Cards Stgo", "Regiones", "Cards Reg", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas", "Parametros"
+tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz, tab_params = st.tabs([
+    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas", "Parametros"
 ])
 
 with tab_global:
     mostrar_dashboard(df_sheets, df_rec, key_prefix="global_", choferes_filter=choferes_todos, tab_nombre="Global", mostrar_donuts=True, mostrar_peores=False)
 
 with tab_stgo:
-    mostrar_dashboard(df_sheets, df_rec_stgo, key_prefix="stgo_", mostrar_centros=False, choferes_filter=choferes_stgo, tab_nombre="Santiago", mostrar_donuts=True, mostrar_peores=False)
-
-with tab_stgo_cards:
     mostrar_cards_choferes(df_sheets, df_rec_stgo, choferes_filter=choferes_stgo, key_prefix="stgo_cards_", tab_nombre="Santiago")
 
 with tab_reg:
-    mostrar_dashboard(df_regiones, df_rec_reg, key_prefix="reg_", choferes_filter=choferes_reg, mostrar_litros=False, mostrar_peores=False, mostrar_litros_simple=True, mostrar_centros=False, tab_nombre="Regiones", mostrar_donuts=True)
-
-with tab_reg_cards:
     _data_comp_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)
     mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg, key_prefix="reg_cards_", tab_nombre="Regiones", data_comp_override=_data_comp_reg)
 
