@@ -18,10 +18,22 @@ from components.tab_recolecciones import mostrar_tab_recolecciones
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
-# Auth
-if not st.user.is_logged_in:
-    st.login("google")
-    st.stop()
+# Auth: Google OAuth en producción, contraseña en local
+if "auth" in st.secrets:
+    if not st.user.is_logged_in:
+        st.login("google")
+        st.stop()
+else:
+    if not st.session_state.get("autenticado"):
+        st.title("App Monitor")
+        pwd = st.text_input("Contraseña", type="password")
+        if st.button("Entrar"):
+            if pwd == st.secrets["app_password"]:
+                st.session_state.autenticado = True
+                st.rerun()
+            else:
+                st.error("Contraseña incorrecta.")
+        st.stop()
 
 # Auto-refresh
 intervalo = int(st.secrets.get("refresh_interval_seconds", 300)) * 1000

@@ -1,5 +1,5 @@
 streamlit>=1.41
-Authlib>=1.3.2
+Authlib==1.3.2
 streamlit-autorefresh
 pandas
 gspread
