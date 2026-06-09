@@ -20,7 +20,7 @@ st.set_page_config(layout="wide", page_title="App Monitor")
 
 # Auth: Google OAuth en producción, contraseña en local
 if "auth" in st.secrets:
-    if not st.user.is_logged_in:
+    if not st.user.email:
         st.login("google")
         st.stop()
 else:
