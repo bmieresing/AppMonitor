@@ -24,6 +24,10 @@ def resolver_recolecciones(df: pd.DataFrame) -> pd.DataFrame:
     df = _resolver_nombre(df, "Peoneta2", empleados, "NombrePeoneta2")
     df = _resolver_nombre(df, "Patente", vehiculos, "Patente_Real")
     df = _resolver_nombre(df, "idProducto", productos, "Producto")
+    # VistaMonitor tiene 1 fila por producto por visita y puede duplicar filas
+    # del mismo (local, producto). Dedup garantiza 1 fila por combinación única.
+    if "idLocalSistema" in df.columns and "idProducto" in df.columns:
+        df = df.drop_duplicates(subset=["idLocalSistema", "idProducto"])
     return df
 
 

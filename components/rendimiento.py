@@ -39,8 +39,19 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     df["Resultado"] = df.apply(clasificar, axis=1)
 
+    # Colapsar a 1 visita por local: exitosa si algún producto tuvo litros
+    if "idLocalSistema" in df.columns:
+        df_vis = (
+            df.groupby(["NombreChofer", "idLocalSistema"])
+            .apply(lambda g: "Exitosa" if (g["Resultado"] == "Exitosa").any() else "Fallida")
+            .reset_index()
+            .rename(columns={0: "Resultado"})
+        )
+    else:
+        df_vis = df[["NombreChofer", "Resultado"]]
+
     stats = (
-        df.groupby(["NombreChofer", "Resultado"])
+        df_vis.groupby(["NombreChofer", "Resultado"])
         .size()
         .reset_index(name="N")
     )
@@ -55,7 +66,7 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         .tolist()
     )
     # Choferes sin exitosas van al final
-    todos = df["NombreChofer"].unique().tolist()
+    todos = df_vis["NombreChofer"].unique().tolist()
     faltantes = [c for c in todos if c not in orden]
     orden = faltantes + orden
 
@@ -110,7 +121,7 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     # Tabla resumen
     st.divider()
-    base = df.groupby("NombreChofer").apply(lambda g: pd.Series({
+    base = df_vis.groupby("NombreChofer").apply(lambda g: pd.Series({
         "N Exitosas":  int((g["Resultado"] == "Exitosa").sum()),
         "N Fallidas":  int((g["Resultado"] == "Fallida").sum()),
         "Total":       len(g),

@@ -61,6 +61,31 @@ def cargar_estado_locales() -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
+def cargar_emergencias() -> pd.DataFrame:
+    """Emergencias asignadas hoy con chofer_asignado. Fuente: appsheet_db.Emergencias."""
+    cfg = st.secrets["mysql"]
+    conn = pymysql.connect(
+        host=cfg["host"],
+        port=int(cfg.get("port", 3306)),
+        database=cfg["database"],
+        user=cfg["user"],
+        password=cfg["password"],
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id_local, chofer_asignado FROM Emergencias "
+                "WHERE fecha_asignacion_emergencia = %s AND chofer_asignado IS NOT NULL",
+                (_hoy(),),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    return pd.DataFrame(rows) if rows else pd.DataFrame()
+
+
 @st.cache_data(ttl=3600)
 def cargar_usuarios_vehiculos() -> pd.DataFrame:
     """Vehiculo (ID) y Chofer (ID) desde Usuarios — para resolver Patente → Chofer sin depender de visitas."""

@@ -675,6 +675,8 @@ def _cards_choferes_tanque(
         )
 
     def _color_pct(pct: int) -> tuple[str, str]:
+        if pct >= 100:
+            return "#2d7a2d", "rgba(45,122,45,0.22)"
         if pct >= 80:
             return "#2d7a2d", "rgba(45,122,45,0.22)"
         if pct >= 50:
@@ -709,7 +711,7 @@ def _cards_choferes_tanque(
         fila = data_sorted[data_sorted["Chofer"] == nombre].iloc[0]
         litros_hoy = float(fila.get("LitrosHoy", 0))
         prom = float(fila.get("Prom", 0))
-        pct_lit = min(int(litros_hoy / prom * 100) if prom > 0 else 0, 100)
+        pct_lit = int(litros_hoy / prom * 100) if prom > 0 else 0
 
         pct_loc = pct_alta = 0
         sub_loc = sub_alta = "—"
@@ -831,7 +833,8 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
         return
 
     def _color_pct(pct: int) -> tuple[str, str]:
-        # (color sólido, color fill semitransparente)
+        if pct >= 100:
+            return "#2d7a2d", "rgba(45,122,45,0.22)"
         if pct >= 80:
             return "#2d7a2d", "rgba(45,122,45,0.22)"
         if pct >= 50:
@@ -868,7 +871,7 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
         for j, centro in enumerate(centros[i:i + cols_por_fila]):
             litros = litros_zona.get(centro, 0)
             prom = prom_zona.get(centro, 0)
-            pct_litros = min(int(litros / prom * 100) if prom > 0 else 0, 100)
+            pct_litros = int(litros / prom * 100) if prom > 0 else 0
 
             fila_loc = local_stats[local_stats["CentroAcopio"] == centro] if not local_stats.empty else pd.DataFrame()
             realizados_loc = int(fila_loc["Realizados"].iloc[0]) if not fila_loc.empty else 0
@@ -938,8 +941,13 @@ def _donuts_global(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
         total_alta = real_alta = pct_alta = 0
 
     # --- Exitosas/Fallidas ---
-    exitosas = int((df_rec["Litros"] > 0).sum()) if not df_rec.empty and "Litros" in df_rec.columns else 0
-    fallidas = int(df_rec["Razon"].notna().sum()) if not df_rec.empty and "Razon" in df_rec.columns else 0
+    if not df_rec.empty and "idLocalSistema" in df_rec.columns:
+        _dedup_vis = df_rec.drop_duplicates(subset="idLocalSistema")
+        exitosas = int((_dedup_vis["Litros"] > 0).sum()) if "Litros" in _dedup_vis.columns else 0
+        fallidas = int(_dedup_vis["Razon"].notna().sum()) if "Razon" in _dedup_vis.columns else 0
+    else:
+        exitosas = int((df_rec["Litros"] > 0).sum()) if not df_rec.empty and "Litros" in df_rec.columns else 0
+        fallidas = int(df_rec["Razon"].notna().sum()) if not df_rec.empty and "Razon" in df_rec.columns else 0
     total_ef = exitosas + fallidas
     pct_exit = round(exitosas / total_ef * 100) if total_ef > 0 else 0
 
@@ -947,7 +955,7 @@ def _donuts_global(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
 
     def _card(titulo: str, emoji: str, valor: str, pct: int,
               color_a: str, color_b: str, label_a: str, label_b: str) -> str:
-        deg = round(pct * 3.6)
+        deg = min(round(pct * 3.6), 360)
         if compact:
             emoji_px, donut_px, hole_px, pct_px, pad, val_px = 44, 86, 58, 16, "12px 14px 10px", "18px"
         else:

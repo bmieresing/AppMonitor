@@ -12,6 +12,7 @@ from connectors.mysql import cargar_recolecciones, cargar_usuarios_vehiculos
 from connectors.postgres import cargar_vehiculos
 from components.recolecciones import resolver_recolecciones
 from components.dashboard import mostrar_dashboard, mostrar_cards_choferes, _preparar_datos_regiones
+from components.comparativa import _preparar_datos
 from components.rendimiento import mostrar_rendimiento
 from components.carrusel import mostrar_carrusel, mostrar_carrusel_zonas
 from components.tab_recolecciones import mostrar_tab_recolecciones
@@ -47,6 +48,13 @@ choferes_reg   = choferes_todos - choferes_stgo
 
 df_rec_stgo = df_rec[df_rec["Chofer"].isin(choferes_stgo)].copy() if "Chofer" in df_rec.columns else pd.DataFrame()
 df_rec_reg  = df_rec[df_rec["Chofer"].isin(choferes_reg)].copy()  if "Chofer" in df_rec.columns else pd.DataFrame()
+
+# data_comp combinado para el carrusel (litros vs esperado por chofer)
+_dc_stgo = _preparar_datos(df_sheets, df_rec_stgo)
+_dc_reg  = _preparar_datos_regiones(df_regiones, df_rec_reg)
+_dc_stgo = _dc_stgo if _dc_stgo is not None else pd.DataFrame()
+_dc_reg  = _dc_reg  if _dc_reg  is not None else pd.DataFrame()
+data_comp_todos = pd.concat([_dc_stgo, _dc_reg], ignore_index=True) if not (_dc_stgo.empty and _dc_reg.empty) else pd.DataFrame()
 
 # Navegación desde card de chofer (link ?nav_carrusel=Nombre)
 _nav_target = st.query_params.get("nav_carrusel", "")
@@ -96,7 +104,7 @@ with tab_rendimiento:
     mostrar_rendimiento(df_rec)
 
 with tab_carrusel:
-    mostrar_carrusel(df_rec)
+    mostrar_carrusel(df_rec, data_comp=data_comp_todos)
 
 with tab_cz:
     mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg)

@@ -3,7 +3,7 @@ import pandas as pd
 import altair as alt
 from streamlit_autorefresh import st_autorefresh
 from connectors.postgres import cargar_productos, cargar_razones
-from connectors.mysql import cargar_estado_locales
+from connectors.mysql import cargar_estado_locales, cargar_emergencias
 from connectors.sheets import cargar_datos, cargar_datos_regiones
 from components.comparativa import _preparar_datos
 
@@ -13,36 +13,47 @@ INTERVALO_ZONAS_SEG = 20
 _EXCLUIR_LITROS = {"Latas", "Desengrasante"}
 
 
-def _donut(exitosas: int, fallidas: int) -> alt.Chart:
-    datos = pd.DataFrame([
-        {"Tipo": "Exitosas", "N": exitosas},
-        {"Tipo": "Fallidas", "N": fallidas},
-    ])
-    return (
+def _donut(exitosas: int, pend_alta: int, pend_normal: int, razon_counts: pd.DataFrame) -> alt.Chart:
+    _REDS = ["#e74c3c", "#c0392b", "#a93226", "#7b241c", "#641e16"]
+    razones = razon_counts["NombreRazon"].tolist() if not razon_counts.empty else []
+    rows = (
+        [{"Tipo": "Exitosas", "N": exitosas}]
+        + [{"Tipo": r, "N": int(n)} for r, n in zip(razones, razon_counts["N"].tolist() if not razon_counts.empty else [])]
+        + [{"Tipo": "Pend. Alta", "N": pend_alta}, {"Tipo": "Pend. Baja/Media", "N": pend_normal}]
+    )
+    datos = pd.DataFrame([r for r in rows if r["N"] > 0])
+    if datos.empty:
+        datos = pd.DataFrame([{"Tipo": "Sin datos", "N": 1}])
+
+    domain = ["Exitosas"] + razones + ["Pend. Alta", "Pend. Baja/Media"]
+    rng    = ["#28a745"] + _REDS[:len(razones)] + ["#555555", "#95a5a6"]
+
+    arco = (
         alt.Chart(datos)
-        .mark_arc(innerRadius=65, outerRadius=110)
+        .mark_arc(innerRadius=55, outerRadius=100)
         .encode(
             theta=alt.Theta("N:Q"),
             color=alt.Color(
                 "Tipo:N",
-                scale=alt.Scale(domain=["Exitosas", "Fallidas"],
-                                range=["#28a745", "#dc3545"]),
+                scale=alt.Scale(domain=domain, range=rng),
                 legend=alt.Legend(orient="bottom", title=None,
-                                  labelFontSize=13, symbolSize=120),
+                                  labelFontSize=10, symbolSize=80, columns=2),
             ),
-            tooltip=[alt.Tooltip("Tipo:N"), alt.Tooltip("N:Q", title="Visitas")],
+            tooltip=[alt.Tooltip("Tipo:N", title=""), alt.Tooltip("N:Q", title="Cant.")],
         )
-        .properties(width=260, height=280)
     )
 
+    return arco.properties(width=240, height=300)
 
-def _mini_kpis(total_v: int, pct_exit: str, exitosas: int, fallidas: int):
+
+def _mini_kpis(exitosas: int, fallidas: int, pend_alta: int, pend_normal: int):
     datos = [
-        ("#2d7a2d", "EXITOSAS",    str(exitosas),  "recolecciones"),
-        ("#c0392b", "FALLIDAS",    str(fallidas),  "sin recolección"),
-        ("#1a6b8a", "EFECTIVIDAD", pct_exit,       f"de {total_v} visitas"),
+        ("#2d7a2d", "EXITOSAS",     str(exitosas),    "recolecciones"),
+        ("#c0392b", "FALLIDAS",     str(fallidas),    "sin recolección"),
+        ("#555555", "PEND. ALTA",   str(pend_alta),   "locales"),
+        ("#95a5a6", "PEND. NORMAL", str(pend_normal), "locales"),
     ]
-    cols = st.columns(3)
+    cols = st.columns(4)
     for col, (color, label, valor, sub) in zip(cols, datos):
         col.html(f"""
         <div style="background:{color};border-radius:10px;padding:10px 12px;
@@ -56,6 +67,12 @@ def _mini_kpis(total_v: int, pct_exit: str, exitosas: int, fallidas: int):
 
 def _top5(df: pd.DataFrame, titulo: str, ascendente: bool, color: str):
     filtrado = df[df["Litros"] > 0].copy()
+    if "idLocalSistema" in filtrado.columns and "Local" in filtrado.columns:
+        filtrado = (
+            filtrado.groupby("idLocalSistema")
+            .agg(Local=("Local", "first"), Litros=("Litros", "sum"))
+            .reset_index(drop=True)
+        )
     top = filtrado.nsmallest(5, "Litros") if ascendente else filtrado.nlargest(5, "Litros")
     max_val = top["Litros"].max() if not top.empty else 1
 
@@ -243,27 +260,24 @@ def mostrar_carrusel_zonas(
     choferes_stgo: set,
     choferes_reg: set,
 ):
-    from components.dashboard import mostrar_dashboard
+    from components.dashboard import mostrar_dashboard, mostrar_cards_choferes, _preparar_datos_regiones
+
+    _data_comp_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)
 
     VISTAS = [
-        ("Global", dict(
-            df_sheets=df_sheets, df_rec=df_rec,
-            key_prefix="cz_global_", choferes_filter=choferes_todos,
-            tab_nombre="Global", mostrar_donuts=True, mostrar_peores=False,
-        )),
-        ("Santiago", dict(
-            df_sheets=df_sheets, df_rec=df_rec_stgo,
-            key_prefix="cz_stgo_", mostrar_centros=False,
-            choferes_filter=choferes_stgo, tab_nombre="Santiago",
+        ("Global",    lambda: mostrar_dashboard(
+            df_sheets, df_rec, key_prefix="cz_global_",
+            choferes_filter=choferes_todos, tab_nombre="Global",
             mostrar_donuts=True, mostrar_peores=False,
         )),
-        ("Regiones", dict(
-            df_sheets=df_regiones, df_rec=df_rec_reg,
-            key_prefix="cz_reg_", mostrar_litros=False,
-            mostrar_peores=False, mostrar_litros_simple=True,
-            mostrar_centros=False,
-            choferes_filter=choferes_reg, tab_nombre="Regiones",
-            mostrar_donuts=True,
+        ("Santiago",  lambda: mostrar_cards_choferes(
+            df_sheets, df_rec_stgo, choferes_filter=choferes_stgo,
+            key_prefix="cz_stgo_cards_", tab_nombre="Santiago",
+        )),
+        ("Regiones",  lambda: mostrar_cards_choferes(
+            df_regiones, df_rec_reg, choferes_filter=choferes_reg,
+            key_prefix="cz_reg_cards_", tab_nombre="Regiones",
+            data_comp_override=_data_comp_reg,
         )),
     ]
     n = len(VISTAS)
@@ -274,7 +288,7 @@ def mostrar_carrusel_zonas(
 
     idx = st.session_state.cz_idx % n
 
-    mostrar_dashboard(**VISTAS[idx][1])
+    VISTAS[idx][1]()
 
     c_prev, c_ind, c_next, c_auto = st.columns([1, 8, 1, 3])
     with c_prev:
@@ -309,7 +323,7 @@ def mostrar_carrusel_zonas(
                 st.session_state.cz_tick_prev = tick
 
 
-def mostrar_carrusel(df_rec: pd.DataFrame):
+def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None):
     if df_rec.empty or "NombreChofer" not in df_rec.columns:
         st.warning("Sin datos de recolecciones para hoy.")
         return
@@ -363,32 +377,147 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
 
     df_c = df_rec[df_rec["NombreChofer"] == chofer].copy()
 
-    exitosas   = int((df_c["Litros"] > 0).sum())
-    fallidas   = int(df_c["Razon"].notna().sum()) if "Razon" in df_c.columns else 0
-    total_v    = exitosas + fallidas
-    pct_exit   = f"{exitosas/total_v*100:.0f}%" if total_v > 0 else "—"
+    # Dedup por (local, producto): la vista tiene 1 fila por producto, pero puede duplicar filas
+    _id_col = "idLocalSistema" if "idLocalSistema" in df_c.columns else None
+    if _id_col and "idProducto" in df_c.columns:
+        df_c = df_c.drop_duplicates(subset=[_id_col, "idProducto"])
+
     df_c_lit = df_c[~df_c["Producto"].isin(_EXCLUIR_LITROS)] if "Producto" in df_c.columns else df_c
     litros_tot = int(df_c_lit["Litros"].sum())
+
+    # Visitas únicas por local
+    if _id_col:
+        _lit_por_local = df_c_lit.groupby(_id_col)["Litros"].sum() if not df_c_lit.empty else pd.Series(dtype=float)
+        exitosas = int((_lit_por_local > 0).sum())
+        _dedup_local = df_c.drop_duplicates(subset=_id_col)
+        fallidas = int(_dedup_local["Razon"].notna().sum()) if "Razon" in _dedup_local.columns else 0
+    else:
+        exitosas = int((df_c["Litros"] > 0).sum())
+        fallidas = int(df_c["Razon"].notna().sum()) if "Razon" in df_c.columns else 0
+
+    # Pendientes desde df_locales filtrado por ID del chofer
+    df_locales_all = cargar_estado_locales()
+    chofer_id = None
+    if not df_c.empty and "Chofer" in df_c.columns:
+        chofer_id = df_c["Chofer"].iloc[0]
+        df_loc_ch = df_locales_all[df_locales_all["Chofer"] == chofer_id]
+    else:
+        df_loc_ch = pd.DataFrame()
+
+    pendientes = df_loc_ch[df_loc_ch["Estado"] != "Realizado"] if not df_loc_ch.empty else pd.DataFrame()
+    if not pendientes.empty and "Prioridad" in pendientes.columns:
+        es_alta = pendientes["Prioridad"].astype(str).str.upper().str.startswith("ALTA")
+        pend_alta   = int(es_alta.sum())
+        pend_normal = len(pendientes) - pend_alta
+    else:
+        pend_alta = pend_normal = 0
+
+    # Emergencias asignadas al chofer hoy, cruzadas con VistaMonitor
+    emerg_total = emerg_realizadas = 0
+    df_emerg_all = cargar_emergencias()
+    if not df_emerg_all.empty and "chofer_asignado" in df_emerg_all.columns and chofer_id is not None:
+        try:
+            df_emerg = df_emerg_all[df_emerg_all["chofer_asignado"].astype(int) == int(chofer_id)]
+            emerg_total = len(df_emerg)
+            if emerg_total > 0 and "id_local" in df_emerg.columns and _id_col and not df_c.empty:
+                locales_ch = set(df_c[_id_col].dropna().astype(int).tolist())
+                emerg_realizadas = int(df_emerg["id_local"].dropna().astype(int).isin(locales_ch).sum())
+        except (ValueError, TypeError):
+            pass
+
+    # Split de fallidas por razón
+    razones_df = cargar_razones()
+    mapa_razones = razones_df.set_index("id")["name"] if not razones_df.empty else pd.Series(dtype=str)
+    if not df_c.empty and "Razon" in df_c.columns and fallidas > 0:
+        df_fall = df_c[df_c["Razon"].notna()].copy()
+        if _id_col:
+            df_fall = df_fall.drop_duplicates(subset=_id_col)
+        df_fall["NombreRazon"] = df_fall["Razon"].map(mapa_razones).fillna("Desconocida")
+        razon_counts = (
+            df_fall.groupby("NombreRazon").size()
+            .reset_index(name="N")
+            .sort_values("N", ascending=False)
+        )
+    else:
+        razon_counts = pd.DataFrame(columns=["NombreRazon", "N"])
+
+    # ── Tanques del banner ───────────────────────────────────────
+    def _tanque_b(pct: int, emoji: str, label: str, sub: str) -> str:
+        if pct >= 100: c = "#81c784"
+        elif pct >= 80: c = "#a5d6a7"
+        elif pct >= 50: c = "#ffb74d"
+        else:           c = "#ef9a9a"
+        h = min(pct, 100)
+        partes = [p.strip() for p in sub.split("/")]
+        if len(partes) == 2:
+            sub_html = (f'<span style="font-size:22px;font-weight:900;color:white">{partes[0]}</span>'
+                        f'<span style="font-size:13px;color:rgba(255,255,255,0.45);margin:0 3px">/</span>'
+                        f'<span style="font-size:13px;font-weight:600;color:rgba(255,255,255,0.7)">{partes[1]}</span>')
+        else:
+            sub_html = f'<span style="font-size:22px;font-weight:900;color:white">{sub}</span>'
+        return f"""
+        <div style="text-align:center;min-width:90px">
+            <div style="font-size:9px;text-transform:uppercase;letter-spacing:1px;
+                        color:rgba(255,255,255,0.55);margin-bottom:3px">{emoji} {label}</div>
+            <div style="display:flex;align-items:baseline;justify-content:center;gap:1px;margin-bottom:6px">{sub_html}</div>
+            <div style="position:relative;height:62px;border:2px solid {c};
+                        border-radius:4px 4px 6px 6px;overflow:hidden;background:rgba(255,255,255,0.06)">
+                <div style="position:absolute;bottom:0;left:0;right:0;height:{h}%;
+                            background:rgba(255,255,255,0.18)"></div>
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+                    <span style="font-size:18px;font-weight:900;color:{c}">{pct}%</span>
+                </div>
+            </div>
+        </div>"""
+
+    # Litros vs esperado
+    if data_comp is not None and not data_comp.empty and "Chofer" in data_comp.columns:
+        fila = data_comp[data_comp["Chofer"] == chofer]
+        if not fila.empty:
+            _lh  = float(fila.iloc[0].get("LitrosHoy", litros_tot))
+            _pr  = float(fila.iloc[0].get("Prom", 0))
+            pct_lit = int(_lh / _pr * 100) if _pr > 0 else 0
+            sub_lit = f"{int(_lh):,} / {int(_pr):,} L"
+        else:
+            pct_lit = 0; sub_lit = f"{litros_tot:,} L"
+    else:
+        pct_lit = 0; sub_lit = f"{litros_tot:,} L"
+
+    # Locales — visitados = exitosas + fallidas (df_rec), total desde df_locales
+    visitados = exitosas + fallidas
+    if not df_loc_ch.empty:
+        _t = len(df_loc_ch)
+        pct_loc = int(visitados / _t * 100) if _t > 0 else 0
+        sub_loc = f"{visitados}/{_t}"
+        if "Prioridad" in df_loc_ch.columns:
+            _alta = df_loc_ch[df_loc_ch["Prioridad"].astype(str).str.upper().str.startswith("ALTA")]
+            _ta, _ra = len(_alta), int((_alta["Estado"] == "Realizado").sum())
+            pct_alta_loc = int(_ra / _ta * 100) if _ta > 0 else 0
+            sub_alta_loc = f"{_ra}/{_ta}"
+        else:
+            _ta = 0; pct_alta_loc = 0; sub_alta_loc = "—"
+    else:
+        _t = 0; pct_loc = pct_alta_loc = 0; sub_loc = sub_alta_loc = "—"; _ta = 0
+
+    pct_emerg = int(emerg_realizadas / emerg_total * 100) if emerg_total > 0 else 0
+    sub_emerg = f"{emerg_realizadas}/{emerg_total}" if emerg_total > 0 else "—"
+
+    tanques_html = (
+        _tanque_b(pct_lit, "💧", "Litros", sub_lit)
+        + _tanque_b(pct_loc, "🏪", "Locales", sub_loc)
+        + (_tanque_b(pct_alta_loc, "⭐", "Alta", sub_alta_loc) if _ta > 0 else "")
+        + (_tanque_b(pct_emerg, "🚨", "Emergencias", sub_emerg) if emerg_total > 0 else "")
+    )
 
     # ── Banner ───────────────────────────────────────────────────
     st.html(f"""
     <div style="background:linear-gradient(135deg,#1a472a,#1a6b8a);border-radius:14px;
-                padding:20px 32px;color:white;text-align:center;margin-top:6px">
+                padding:16px 28px;color:white;margin-top:6px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:2px;
-                    opacity:0.7;margin-bottom:6px">Chofer</div>
-        <div style="display:flex;justify-content:center;align-items:center;gap:32px;flex-wrap:wrap">
-            <span style="font-size:46px;font-weight:900;line-height:1">{chofer}</span>
-            <div style="width:2px;height:50px;background:rgba(255,255,255,0.3);border-radius:2px"></div>
-            <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:32px;line-height:1">💧</span>
-                <div>
-                    <div style="font-size:10px;opacity:0.65;letter-spacing:1px">LITROS HOY</div>
-                    <div style="display:flex;align-items:baseline;gap:4px">
-                        <span style="font-size:46px;font-weight:900;line-height:1">{litros_tot:,}</span>
-                        <span style="font-size:16px;opacity:0.75">L</span>
-                    </div>
-                </div>
-            </div>
+                    opacity:0.7;margin-bottom:8px">Chofer</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap">
+            <span style="font-size:38px;font-weight:900;line-height:1">{chofer}</span>
+            <div style="display:flex;gap:14px">{tanques_html}</div>
         </div>
     </div>""")
 
@@ -398,14 +527,13 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     col_iz, col_der = st.columns([2, 3])
 
     with col_iz:
-        st.altair_chart(_donut(exitosas, fallidas), width='stretch')
-        _mini_kpis(total_v, pct_exit, exitosas, fallidas)
+        st.altair_chart(_donut(exitosas, pend_alta, pend_normal, razon_counts), width='stretch')
+        _mini_kpis(exitosas, fallidas, pend_alta, pend_normal)
 
     with col_der:
-        c_tops, c_razones = st.columns([1, 1])
+        c_tops, c_prod = st.columns([1, 1])
         with c_tops:
             _top5(df_c, "🏆 Top 5 — Más litros",   ascendente=False, color="#2d7a2d")
             _top5(df_c, "⚠️ Top 5 — Menos litros", ascendente=True,  color="#e67e22")
-        with c_razones:
-            _razones_fallo(df_c)
+        with c_prod:
             _productos(df_c)
