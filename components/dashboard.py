@@ -1,3 +1,4 @@
+import urllib.parse
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -476,7 +477,46 @@ def _peores(data_comp: pd.DataFrame):
     st.html(html)
 
 
-def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame | None = None):
+def _preparar_datos_regiones(df_reg: pd.DataFrame, df_rec: pd.DataFrame) -> pd.DataFrame:
+    """data_comp para Regiones: une nombre chofer del sheet con litros reales del día."""
+    col_chofer = next((c for c in df_reg.columns if "CHOFER" in c.upper()), None)
+    col_prom = next((c for c in df_reg.columns if "PROM" in c.upper()), None)
+    if not col_chofer or df_reg.empty:
+        return pd.DataFrame()
+
+    prom_s = df_reg[[col_chofer]].copy()
+    prom_s.columns = ["Chofer"]
+    # cargar_datos_regiones ya convierte col_prom a numérico
+    prom_s["Prom"] = df_reg[col_prom].fillna(0) if col_prom else 0.0
+    prom_s = prom_s[prom_s["Chofer"].notna()].copy()
+    prom_s["_key"] = prom_s["Chofer"].str.strip().str.lower()
+
+    if not df_rec.empty and "NombreChofer" in df_rec.columns:
+        lit_s = (
+            _litros(df_rec)
+            .groupby("NombreChofer")["Litros"]
+            .sum()
+            .reset_index()
+            .rename(columns={"NombreChofer": "Chofer_rec", "Litros": "LitrosHoy"})
+        )
+        lit_s["_key"] = lit_s["Chofer_rec"].str.strip().str.lower()
+        # outer: incluye choferes del sheet sin litros aún y choferes con litros no en el sheet
+        result = prom_s.merge(lit_s[["_key", "LitrosHoy"]], on="_key", how="outer")
+        name_by_key = lit_s.set_index("_key")["Chofer_rec"].to_dict()
+        mask = result["Chofer"].isna()
+        result.loc[mask, "Chofer"] = result.loc[mask, "_key"].map(name_by_key)
+    else:
+        result = prom_s.copy()
+        result["LitrosHoy"] = 0.0
+
+    result = result.drop(columns=["_key"]).copy()
+    result["LitrosHoy"] = result["LitrosHoy"].fillna(0)
+    result["Prom"] = result["Prom"].fillna(0)
+    result["Pct"] = (result["LitrosHoy"] / result["Prom"] * 100).where(result["Prom"] > 0, 0).round(1)
+    return result.sort_values("LitrosHoy", ascending=False).reset_index(drop=True)
+
+
+def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame | None = None, tab_nombre: str = "", key_prefix: str = ""):
     empleados = cargar_empleados()
     # Índice en str para evitar mismatch de tipo int entre MySQL y PostgreSQL
     mapa = (
@@ -502,6 +542,12 @@ def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
 
     max_litros = max(litros_ch.values(), default=1)
 
+    # pct vs esperado; 0 si no hay prom definido
+    pct_ch: dict[str, int] = {}
+    for _n, _l in litros_ch.items():
+        _p = prom_ch.get(_n, 0) if usar_prom else 0
+        pct_ch[_n] = int(_l / _p * 100) if _p > 0 else 0
+
     # Locales por chofer: total y alta por separado
     df_loc = df_locales.copy() if not df_locales.empty else pd.DataFrame()
     # locales_ch[nombre] = {"total": (r, t), "alta": (r, t)}
@@ -521,9 +567,18 @@ def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
                 "alta":  (realiz_alta, len(grp_alta)),
             }
 
+    # Choferes que cerraron ruta (tienen FechaObservacion)
+    cerrados: set[str] = set()
+    if not df_rec.empty and "FechaObservacion" in df_rec.columns and "NombreChofer" in df_rec.columns:
+        cerrados = set(
+            df_rec.groupby("NombreChofer")["FechaObservacion"]
+            .apply(lambda x: x.notna().any())
+            .pipe(lambda s: s[s].index.tolist())
+        )
+
     choferes = sorted(
         set(list(litros_ch.keys()) + list(locales_ch.keys())),
-        key=lambda n: litros_ch.get(n, 0), reverse=True,
+        key=lambda n: pct_ch.get(n, 0), reverse=True,
     )
     if not choferes:
         return
@@ -550,14 +605,8 @@ def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
     cards = []
     for nombre in choferes:
         litros = litros_ch.get(nombre, 0)
-        if usar_prom:
-            prom = prom_ch.get(nombre, 0)
-            pct_lit_real = int(litros / prom * 100) if prom > 0 else 0
-            pct_lit_fill = min(pct_lit_real, 100)
-            barra_lit = _barra(pct_lit_fill, pct_lit_real, f"💧 {int(litros):,} L", mostrar_pct=True)
-        else:
-            pct_lit_fill = int(litros / max_litros * 100) if max_litros > 0 else 0
-            barra_lit = _barra(pct_lit_fill, pct_lit_fill, f"💧 {int(litros):,} L", mostrar_pct=False)
+        pct_lit = pct_ch.get(nombre, 0)
+        barra_lit = _barra(min(pct_lit, 100), pct_lit, f"💧 {int(litros):,} L", mostrar_pct=True)
 
         barras_loc = ""
         if nombre in locales_ch:
@@ -569,18 +618,28 @@ def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
                 pct_alt = int(r_alt / t_alt * 100) if t_alt > 0 else 0
                 barras_loc += _barra(pct_alt, pct_alt, f"⭐ {r_alt}/{t_alt}")
 
+        cerrado = nombre in cerrados
+        candado = (
+            '<span style="font-size:9px;margin-left:3px;vertical-align:middle;flex-shrink:0;'
+            'font-family:\'Apple Color Emoji\',\'Segoe UI Emoji\',\'Noto Color Emoji\',sans-serif">🔒</span>'
+        ) if cerrado else ''
+        bg = '#f0f4f0' if cerrado else '#f9fdf9'
+        link = f'?nav_carrusel={urllib.parse.quote(nombre)}'
         cards.append(
             f'<div style="border:1px solid #c8e6c9;border-radius:5px;padding:5px 7px;'
-            f'background:#f9fdf9;box-shadow:0 1px 3px rgba(0,0,0,0.04)">'
-            f'<div style="font-weight:700;font-size:9px;color:#1a472a;margin-bottom:3px;'
-            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{nombre}">{nombre}</div>'
+            f'background:{bg};box-shadow:0 1px 3px rgba(0,0,0,0.04)">'
+            f'<div style="display:flex;align-items:center;font-weight:700;font-size:9px;'
+            f'color:#1a472a;margin-bottom:3px;overflow:hidden" title="{nombre}">'
+            f'<a href="{link}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+            f'text-decoration:none;color:#1a472a">{nombre}</a>'
+            f'{candado}</div>'
             f'{barra_lit}{barras_loc}</div>'
         )
 
-    grid = "".join(cards)
-    st.html(
+    st.markdown(
         f'<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:2px 0">'
-        f'{grid}</div>'
+        f'{"".join(cards)}</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -696,6 +755,17 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
 
 
 def _donuts_global(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame, tab_nombre: str = "Global"):
+    # --- Rutas / Cerradas (antes del filtro _litros para no perder choferes) ---
+    n_rutas = df_locales["Chofer"].nunique() if not df_locales.empty else 0
+    if not df_rec.empty and "FechaObservacion" in df_rec.columns and "NombreChofer" in df_rec.columns:
+        cerradas = int(
+            df_rec.groupby("NombreChofer")["FechaObservacion"]
+            .apply(lambda x: x.notna().any()).sum()
+        )
+    else:
+        cerradas = 0
+    pct_cerradas = round(cerradas / n_rutas * 100) if n_rutas > 0 else 0
+
     df_rec = _litros(df_rec)
     # --- Litros vs Esperado ---
     litros_hoy = df_rec["Litros"].sum() if not df_rec.empty else 0
@@ -782,13 +852,16 @@ def _donuts_global(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
               pct_loc, "#2d7a2d", "#e0e0e0", "Realizados", "Pendientes"),
         _card("Prioridad Alta", "⭐",
               f"{real_alta:,} / {total_alta:,}",
-              pct_alta, "#2d7a2d", "#e67e22", "Realizados", "Pendientes"),
+              pct_alta, "#2d7a2d", "#e0e0e0", "Realizados", "Pendientes"),
         _card("Recolecciones", "✅",
               f"{exitosas:,} / {fallidas:,}",
               pct_exit, "#28a745", "#dc3545", "Exitosas", "Fallidas"),
+        _card("Rutas Cerradas", "🚦",
+              f"{cerradas:,} / {n_rutas:,}",
+              pct_cerradas, "#1a6b8a", "#e0e0e0", "Cerradas", "Abiertas"),
     ])
     st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;'
+        f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;'
         f'padding:2px 0 6px">{cards}</div>',
         unsafe_allow_html=True,
     )
@@ -819,7 +892,7 @@ def mostrar_dashboard(df_sheets: pd.DataFrame, df_rec: pd.DataFrame, choferes_fi
             _desempeno_centros(df_rec, data_comp, df_locales)
         elif mostrar_litros:
             if "SANTIAGO" in tab_nombre.upper():
-                _grid_choferes(df_rec, df_locales, data_comp=data_comp if not data_comp.empty else None)
+                _grid_choferes(df_rec, df_locales, data_comp=data_comp if not data_comp.empty else None, tab_nombre=tab_nombre, key_prefix=key_prefix)
             else:
                 c_lit, c_loc = st.columns(2)
                 with c_lit:
@@ -828,7 +901,8 @@ def mostrar_dashboard(df_sheets: pd.DataFrame, df_rec: pd.DataFrame, choferes_fi
                     _grafico_locales(df_locales, key_prefix=key_prefix, vertical=vertical)
         elif mostrar_litros_simple:
             if vertical:
-                _grid_choferes(df_rec, df_locales)
+                data_comp_reg = _preparar_datos_regiones(df_sheets, df_rec)
+                _grid_choferes(df_rec, df_locales, data_comp=data_comp_reg if not data_comp_reg.empty else None, tab_nombre=tab_nombre, key_prefix=key_prefix)
             else:
                 _grafico_litros_simple(df_rec, df_locales)
                 _grafico_locales(df_locales, key_prefix=key_prefix)

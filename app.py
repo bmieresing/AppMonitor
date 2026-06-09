@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as _cv1
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
@@ -18,18 +19,8 @@ from components.tab_recolecciones import mostrar_tab_recolecciones
 st.set_page_config(layout="wide", page_title="App Monitor")
 
 # Auth
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
-
-if not st.session_state.autenticado:
-    st.title("App Monitor")
-    pwd = st.text_input("Contraseña", type="password")
-    if st.button("Entrar"):
-        if pwd == st.secrets["app_password"]:
-            st.session_state.autenticado = True
-            st.rerun()
-        else:
-            st.error("Contraseña incorrecta.")
+if not st.user.is_logged_in:
+    st.login("google")
     st.stop()
 
 # Auto-refresh
@@ -58,6 +49,33 @@ choferes_reg   = choferes_todos - choferes_stgo
 
 df_rec_stgo = df_rec[df_rec["Chofer"].isin(choferes_stgo)].copy() if "Chofer" in df_rec.columns else pd.DataFrame()
 df_rec_reg  = df_rec[df_rec["Chofer"].isin(choferes_reg)].copy()  if "Chofer" in df_rec.columns else pd.DataFrame()
+
+# Navegación desde card de chofer (link ?nav_carrusel=Nombre)
+_nav_target = st.query_params.get("nav_carrusel", "")
+if _nav_target:
+    _ch_sorted = sorted(df_rec["NombreChofer"].dropna().unique().tolist()) if not df_rec.empty and "NombreChofer" in df_rec.columns else []
+    if _nav_target in _ch_sorted:
+        st.session_state.carrusel_idx = _ch_sorted.index(_nav_target)
+    st.session_state._do_nav_car = True
+    st.query_params.clear()
+    st.rerun()
+
+if st.session_state.get("_do_nav_car"):
+    st.session_state._do_nav_car = False
+    _cv1.html("""<script>
+setTimeout(function(){
+    var t=window.parent.document.querySelectorAll('[data-baseweb="tab"],[role="tab"]');
+    for(var i=0;i<t.length;i++){
+        if(t[i].textContent.trim()==='Carrusel'){t[i].click();break;}
+    }
+},300);
+</script>""", height=1)
+
+_, col_btn = st.columns([10, 1])
+with col_btn:
+    if st.button("↺ Actualizar", use_container_width=True, help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
+        st.cache_data.clear()
+        st.rerun()
 
 tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz = st.tabs([
     "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas"
