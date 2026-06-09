@@ -10,6 +10,8 @@ from components.comparativa import _preparar_datos
 INTERVALO_SEG = 10
 INTERVALO_ZONAS_SEG = 20
 
+_EXCLUIR_LITROS = {"Latas", "Desengrasante"}
+
 
 def _donut(exitosas: int, fallidas: int) -> alt.Chart:
     datos = pd.DataFrame([
@@ -174,7 +176,8 @@ def _productos(df_c: pd.DataFrame):
 
 
 def _global_strip(df_rec: pd.DataFrame):
-    litros_hoy = df_rec["Litros"].sum() if not df_rec.empty else 0
+    df_rec_lit = df_rec[~df_rec["Producto"].isin(_EXCLUIR_LITROS)] if not df_rec.empty and "Producto" in df_rec.columns else df_rec
+    litros_hoy = df_rec_lit["Litros"].sum() if not df_rec_lit.empty else 0
     n_choferes = df_rec["NombreChofer"].nunique() if "NombreChofer" in df_rec.columns else 0
     prom_por_ruta = litros_hoy / n_choferes if n_choferes > 0 else 0
 
@@ -364,7 +367,8 @@ def mostrar_carrusel(df_rec: pd.DataFrame):
     fallidas   = int(df_c["Razon"].notna().sum()) if "Razon" in df_c.columns else 0
     total_v    = exitosas + fallidas
     pct_exit   = f"{exitosas/total_v*100:.0f}%" if total_v > 0 else "—"
-    litros_tot = int(df_c["Litros"].sum())
+    df_c_lit = df_c[~df_c["Producto"].isin(_EXCLUIR_LITROS)] if "Producto" in df_c.columns else df_c
+    litros_tot = int(df_c_lit["Litros"].sum())
 
     # ── Banner ───────────────────────────────────────────────────
     st.html(f"""

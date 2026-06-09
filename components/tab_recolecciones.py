@@ -3,6 +3,8 @@ import pandas as pd
 from connectors.mysql import cargar_estado_locales
 from connectors.postgres import cargar_empleados
 
+_EXCLUIR_LITROS = {"Latas", "Desengrasante"}
+
 _PALETA = [
     ("#1565c0", "#e3f2fd"),  # azul
     ("#2e7d32", "#e8f5e9"),  # verde
@@ -40,10 +42,13 @@ def _panel_productos(df_rec: pd.DataFrame):
         return
 
     total_global = float(prod_totales["total"].sum())
+    total_aceite = float(
+        prod_totales.loc[~prod_totales["Producto"].isin(_EXCLUIR_LITROS), "total"].sum()
+    )
 
     col_met, col_vis = st.columns([1, 4])
     with col_met:
-        st.metric("Total litros hoy", f"{total_global:,.0f} L",
+        st.metric("Total litros hoy", f"{total_aceite:,.0f} L",
                   delta=f"{int(prod_totales['visitas'].sum())} visitas totales",
                   delta_color="off")
 

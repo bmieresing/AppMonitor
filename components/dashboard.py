@@ -643,6 +643,145 @@ def _grid_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd
     )
 
 
+def _cards_choferes_tanque(
+    df_rec: pd.DataFrame,
+    df_locales: pd.DataFrame,
+    data_comp: pd.DataFrame,
+    key_prefix: str = "",
+    cols_por_fila: int = 4,
+):
+    """Tarjetas tipo tanque por chofer — análogo a _desempeno_centros pero para choferes."""
+    if data_comp.empty or "Chofer" not in data_comp.columns:
+        st.info("Sin datos de choferes para hoy.")
+        return
+
+    empleados = cargar_empleados()
+    mapa_nombre = empleados.set_index(empleados["id"].astype(str))["nombre"] if not empleados.empty else pd.Series(dtype=str)
+
+    df_loc = df_locales.copy() if not df_locales.empty else pd.DataFrame()
+    if not df_loc.empty and "Chofer" in df_loc.columns:
+        df_loc["NombreChofer"] = df_loc["Chofer"].astype(str).map(mapa_nombre).fillna(df_loc["Chofer"].astype(str))
+        if "Prioridad" in df_loc.columns:
+            df_loc["EsAlta"] = df_loc["Prioridad"].astype(str).str.upper().str.startswith("ALTA")
+        else:
+            df_loc["EsAlta"] = False
+
+    cerrados: set[str] = set()
+    if not df_rec.empty and "FechaObservacion" in df_rec.columns and "NombreChofer" in df_rec.columns:
+        cerrados = set(
+            df_rec.groupby("NombreChofer")["FechaObservacion"]
+            .apply(lambda x: x.notna().any())
+            .pipe(lambda s: s[s].index.tolist())
+        )
+
+    def _color_pct(pct: int) -> tuple[str, str]:
+        if pct >= 80:
+            return "#2d7a2d", "rgba(45,122,45,0.22)"
+        if pct >= 50:
+            return "#e67e22", "rgba(230,126,34,0.22)"
+        return "#c0392b", "rgba(192,57,43,0.22)"
+
+    def _tanque(pct: int, emoji: str, label: str, sub: str) -> str:
+        color, fill = _color_pct(pct)
+        h = min(pct, 100)
+        return f"""
+        <div style="text-align:center;flex:1">
+            <div style="position:relative;height:52px;border:1px solid {color};
+                        border-radius:4px 4px 6px 6px;overflow:hidden;background:#fafafa;
+                        margin:0 auto">
+                <div style="position:absolute;bottom:0;left:0;right:0;height:{h}%;
+                            background:{fill}"></div>
+                <div style="position:absolute;inset:0;display:flex;align-items:center;
+                            justify-content:center;z-index:1">
+                    <span style="font-size:20px;font-weight:900;color:{color};
+                                 text-shadow:0 0 4px #fff,0 0 4px #fff">{pct}%</span>
+                </div>
+            </div>
+            <div style="font-size:9px;font-weight:700;color:#444;margin-top:2px">{emoji} {label}</div>
+            <div style="font-size:11px;font-weight:700;color:#333;margin-top:1px">{sub}</div>
+        </div>"""
+
+    data_sorted = data_comp.sort_values("Pct", ascending=False).reset_index(drop=True)
+    choferes = data_sorted["Chofer"].tolist()
+
+    cards_html = []
+    for nombre in choferes:
+        fila = data_sorted[data_sorted["Chofer"] == nombre].iloc[0]
+        litros_hoy = float(fila.get("LitrosHoy", 0))
+        prom = float(fila.get("Prom", 0))
+        pct_lit = min(int(litros_hoy / prom * 100) if prom > 0 else 0, 100)
+
+        pct_loc = pct_alta = 0
+        sub_loc = sub_alta = "—"
+        if not df_loc.empty and "NombreChofer" in df_loc.columns:
+            grp = df_loc[df_loc["NombreChofer"] == nombre]
+            if not grp.empty:
+                t_tot = len(grp)
+                r_tot = int((grp["Estado"] == "Realizado").sum())
+                pct_loc = int(r_tot / t_tot * 100) if t_tot > 0 else 0
+                sub_loc = f"{r_tot}/{t_tot}"
+                grp_alta = grp[grp["EsAlta"]]
+                if not grp_alta.empty:
+                    t_alt = len(grp_alta)
+                    r_alt = int((grp_alta["Estado"] == "Realizado").sum())
+                    pct_alta = int(r_alt / t_alt * 100) if t_alt > 0 else 0
+                    sub_alta = f"{r_alt}/{t_alt}"
+
+        cerrado = nombre in cerrados
+        candado = "🔒 " if cerrado else ""
+        bg = "#f0f4f0" if cerrado else "#f9fdf9"
+        sub_lit = f"{int(litros_hoy):,} / {int(prom):,} L"
+
+        t_lit = _tanque(pct_lit, "💧", "Litros", sub_lit)
+        t_loc = _tanque(pct_loc, "🏪", "Locales", sub_loc)
+        t_alt = _tanque(pct_alta, "⭐", "Alta", sub_alta) if sub_alta != "—" else ""
+        tanques = f'<div style="display:flex;gap:5px">{t_lit}{t_loc}{t_alt}</div>'
+
+        cards_html.append(f"""
+        <div style="border:1px solid #c8e6c9;border-radius:7px;padding:5px 6px 4px;
+                    background:{bg};box-shadow:0 1px 4px rgba(0,0,0,0.04);margin:2px">
+            <div style="font-weight:700;font-size:9px;color:#1a472a;margin-bottom:4px;
+                        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                        border-bottom:1px solid #e0f0e0;padding-bottom:3px"
+                 title="{nombre}">{candado}<a href="?nav_carrusel={urllib.parse.quote(nombre)}" style="text-decoration:none;color:#1a472a">{nombre}</a></div>
+            {tanques}
+        </div>""")
+
+    for i in range(0, len(cards_html), cols_por_fila):
+        cols = st.columns(cols_por_fila)
+        for j, card in enumerate(cards_html[i:i + cols_por_fila]):
+            cols[j].markdown(card, unsafe_allow_html=True)
+
+
+def mostrar_cards_choferes(
+    df_sheets: pd.DataFrame,
+    df_rec: pd.DataFrame,
+    choferes_filter: set,
+    key_prefix: str = "",
+    tab_nombre: str = "",
+    data_comp_override: pd.DataFrame | None = None,
+):
+    """Tab alternativo con tarjetas tipo tanque por chofer (sin gráficos de barras)."""
+    data_comp = pd.DataFrame()
+    if data_comp_override is not None:
+        data_comp = data_comp_override
+    elif not df_sheets.empty and not df_rec.empty:
+        result = _preparar_datos(df_sheets, df_rec)
+        data_comp = result if result is not None else pd.DataFrame()
+
+    df_locales = cargar_estado_locales()
+    df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
+
+    n_choferes = len(data_comp) if not data_comp.empty else 0
+    cols = 7 if n_choferes > 20 else 6 if n_choferes > 12 else 5 if n_choferes > 6 else 4
+
+    _css()
+    _header(tab_nombre)
+    _donuts_global(df_rec, df_locales, data_comp, tab_nombre=tab_nombre)
+    st.divider()
+    _cards_choferes_tanque(df_rec, df_locales, data_comp, key_prefix=key_prefix, cols_por_fila=cols)
+
+
 def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales: pd.DataFrame):
     df_rec = _litros(df_rec)
     # % Litros por Zona desde Control Regiones
