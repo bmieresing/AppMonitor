@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from components.helpers.data_prep import _preparar_datos_regiones
-
-INTERVALO_ZONAS_SEG = 20
+from config import INTERVALO_ZONAS_SEG
 
 
 @st.fragment
@@ -16,20 +15,28 @@ def mostrar_carrusel_zonas(
     choferes_todos: set,
     choferes_stgo: set,
     choferes_reg: set,
+    data_comp_stgo: pd.DataFrame | None = None,
+    data_comp_reg: pd.DataFrame | None = None,
 ):
     from components.tabs.tab_global import mostrar_dashboard
     from components.tabs.tab_zonas import mostrar_cards_choferes
 
-    _data_comp_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)
+    # Usar las comparativas ya calculadas en app.py; recalcular solo como fallback
+    _data_comp_reg = (
+        data_comp_reg if data_comp_reg is not None
+        else _preparar_datos_regiones(df_regiones, df_rec_reg)
+    )
 
     VISTAS = [
         ("Global",    lambda: mostrar_dashboard(
             df_sheets, df_rec, choferes_filter=choferes_todos,
             key_prefix="cz_global_", tab_nombre="Global",
+            data_comp_override=data_comp_stgo,
         )),
         ("Santiago",  lambda: mostrar_cards_choferes(
             df_sheets, df_rec_stgo, choferes_filter=choferes_stgo,
             key_prefix="cz_stgo_cards_", tab_nombre="Santiago",
+            data_comp_override=data_comp_stgo,
         )),
         ("Regiones",  lambda: mostrar_cards_choferes(
             df_regiones, df_rec_reg, choferes_filter=choferes_reg,

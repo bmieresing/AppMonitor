@@ -1,3 +1,5 @@
+from config import UMBRAL_VERDE, UMBRAL_AMARILLO
+
 # Paleta del dashboard — usar estas constantes en lugar de literales hex
 C_VERDE     = "#2d7a2d"
 C_VERDE_OSC = "#1a472a"
@@ -8,9 +10,9 @@ C_NO_ALC    = "#e53935"
 
 def _color_pct(pct: int) -> tuple[str, str]:
     """Retorna (color_borde, color_relleno) según umbral de porcentaje."""
-    if pct >= 80:
+    if pct >= UMBRAL_VERDE:
         return C_VERDE, "rgba(45,122,45,0.22)"
-    if pct >= 50:
+    if pct >= UMBRAL_AMARILLO:
         return C_ROJO, "rgba(230,126,34,0.22)"
     return C_ROJO, "rgba(192,57,43,0.22)"
 

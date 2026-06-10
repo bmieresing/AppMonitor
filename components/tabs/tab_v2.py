@@ -5,62 +5,15 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from connectors.mysql import cargar_estado_locales
-from components.helpers.data_prep import _litros, _pct, _mapa_empleados, _cerrados_set
+from components.helpers.data_prep import _pct, _mapa_empleados, _cerrados_set
+from components.helpers.kpis import calcular_kpis
+from config import UMBRAL_VERDE, UMBRAL_AMARILLO
 
 TZ = ZoneInfo("America/Santiago")
 
 
 def _color_pct(pct: int) -> str:
-    return "#2d7a2d" if pct >= 80 else "#c0392b" if pct < 50 else "#e67e22"
-
-
-def _kpis(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame) -> dict:
-    n_rutas  = df_locales["Chofer"].nunique() if not df_locales.empty else 0
-    cerradas = len(_cerrados_set(df_rec))
-
-    no_alc_loc = no_alc_alta = 0
-    if not df_rec.empty and "Razon" in df_rec.columns and "idLocalSistema" in df_rec.columns:
-        _df_na = df_rec[df_rec["Razon"] == 11].drop_duplicates(subset="idLocalSistema")
-        no_alc_loc = len(_df_na)
-        if not df_locales.empty and "Prioridad" in df_locales.columns and "ID_Local" in df_locales.columns:
-            alta_ids = set(
-                df_locales[df_locales["Prioridad"].str.upper().str.contains("ALTA", na=False)]
-                ["ID_Local"].astype(int)
-            )
-            no_alc_alta = int(_df_na["idLocalSistema"].dropna().astype(int).isin(alta_ids).sum())
-
-    df_lit   = _litros(df_rec)
-    litros   = df_lit["Litros"].sum() if not df_lit.empty else 0
-    esperado = data_comp["Prom"].sum() if not data_comp.empty else 0
-
-    total_loc    = len(df_locales)
-    realizados   = int((df_locales["Estado"] == "Realizado").sum()) if not df_locales.empty else 0
-    exitosos_loc = max(0, realizados - no_alc_loc)
-
-    total_alta = exitosos_alta = 0
-    if not df_locales.empty and "Prioridad" in df_locales.columns:
-        df_alta      = df_locales[df_locales["Prioridad"].str.upper().str.contains("ALTA", na=False)]
-        total_alta   = len(df_alta)
-        real_alta    = int((df_alta["Estado"] == "Realizado").sum())
-        exitosos_alta = max(0, real_alta - no_alc_alta)
-
-    exitosas = fallidas = 0
-    if not df_lit.empty:
-        base = df_lit.drop_duplicates("idLocalSistema") if "idLocalSistema" in df_lit.columns else df_lit
-        exitosas = int((base["Litros"] > 0).sum()) if "Litros" in base.columns else 0
-        fallidas = int(base["Razon"].notna().sum())  if "Razon"  in base.columns else 0
-
-    return dict(
-        litros=litros, esperado=esperado, pct_lit=_pct(litros, esperado),
-        exitosos_loc=exitosos_loc, total_loc=total_loc,
-        pct_loc=_pct(exitosos_loc, total_loc), no_alc_loc=no_alc_loc,
-        exitosos_alta=exitosos_alta, total_alta=total_alta,
-        pct_alta=_pct(exitosos_alta, total_alta), no_alc_alta=no_alc_alta,
-        exitosas=exitosas, fallidas=fallidas,
-        pct_exit=_pct(exitosas, exitosas + fallidas),
-        cerradas=cerradas, n_rutas=n_rutas,
-        pct_cerradas=_pct(cerradas, n_rutas),
-    )
+    return "#2d7a2d" if pct >= UMBRAL_VERDE else "#c0392b" if pct < UMBRAL_AMARILLO else "#e67e22"
 
 
 def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame) -> list[dict]:
@@ -165,7 +118,9 @@ def _donut_fig(
 
 def _mini_metrica(col, emoji: str, label: str, pct: int, sub: str | None):
     color = _color_pct(pct)
-    fill  = "rgba(45,122,45,0.22)" if pct >= 80 else "rgba(192,57,43,0.22)" if pct < 50 else "rgba(230,126,34,0.22)"
+    fill  = ("rgba(45,122,45,0.22)" if pct >= UMBRAL_VERDE
+             else "rgba(192,57,43,0.22)" if pct < UMBRAL_AMARILLO
+             else "rgba(230,126,34,0.22)")
     h     = min(pct, 100)
     with col:
         st.markdown(
@@ -204,7 +159,8 @@ def mostrar_tab_v2(
     tab_nombre: str = "Santiago",
 ):
     df_locales = cargar_estado_locales()
-    df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
+    if not df_locales.empty:
+        df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
 
     col_titulo, col_btn = st.columns([10, 1])
     with col_titulo:
@@ -212,11 +168,11 @@ def mostrar_tab_v2(
         st.subheader(f"Dashboard Operacional – Recolección de Aceite | {tab_nombre}")
         st.caption(f"Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}  ●  EN VIVO")
     with col_btn:
-        if st.button("↺ Actualizar", key=f"v2_refresh_{tab_nombre}", use_container_width=True):
+        if st.button("↺ Actualizar", key=f"v2_refresh_{tab_nombre}", width='stretch'):
             st.cache_data.clear()
             st.rerun()
 
-    k = _kpis(df_rec, df_locales, data_comp)
+    k = calcular_kpis(df_rec, df_locales, data_comp)
     _cfg = {"displayModeBar": False}
 
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -233,7 +189,7 @@ def mostrar_tab_v2(
                     st.plotly_chart(
                         _donut_fig(pct, color_fill, color_bg=color_bg,
                                    segmento_alerta=segmento_alerta),
-                        use_container_width=True, config=_cfg, key=key,
+                        width='stretch', config=_cfg, key=key,
                     )
                 dots = " &nbsp; ".join(
                     f'<span style="color:{c}">●</span> {l}'

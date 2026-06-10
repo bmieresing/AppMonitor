@@ -65,7 +65,7 @@ def _header(tab_nombre: str = "", key_prefix: str = ""):
           }}
         </style>
         """, unsafe_allow_html=True)
-        if st.button("↺ Actualizar", use_container_width=True,
+        if st.button("↺ Actualizar", width='stretch',
                      key=f"hdr_refresh_{key_prefix}{tab_nombre or 'main'}",
                      help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
             st.cache_data.clear()

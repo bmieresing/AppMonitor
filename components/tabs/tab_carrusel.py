@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from streamlit_autorefresh import st_autorefresh
-from connectors.postgres import cargar_productos, cargar_razones
+from connectors.postgres import cargar_razones
 from connectors.mysql import cargar_estado_locales, cargar_emergencias
 from components.helpers.data_prep import _litros
-
-INTERVALO_SEG = 10
+from components.helpers.kpis import exitosas_fallidas
+from config import INTERVALO_CARRUSEL_SEG
 
 _NO_ALC = "No alcanzamos a pasar"
 _NO_ALC_COLOR = "#e53935"
@@ -211,13 +211,6 @@ def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None
     if n == 0:
         return
 
-    productos = cargar_productos()
-    if not productos.empty:
-        df_rec = df_rec.copy()
-        df_rec["Producto"] = df_rec["idProducto"].map(
-            productos.set_index("id")["name"]
-        ).fillna("Sin producto")
-
     for key, val in [("carrusel_idx", 0), ("carrusel_tick_prev", 0)]:
         if key not in st.session_state:
             st.session_state[key] = val
@@ -226,7 +219,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None
     with c_toggle:
         auto = st.toggle("Auto", value=False, key="carrusel_auto")
     if auto:
-        tick = st_autorefresh(interval=INTERVALO_SEG * 1000, key="carrusel_tick")
+        tick = st_autorefresh(interval=INTERVALO_CARRUSEL_SEG * 1000, key="carrusel_tick")
         if tick != st.session_state.carrusel_tick_prev:
             st.session_state.carrusel_idx = (st.session_state.carrusel_idx + 1) % n
             st.session_state.carrusel_tick_prev = tick
@@ -257,22 +250,17 @@ def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None
     if _id_col and "idProducto" in df_c.columns:
         df_c = df_c.drop_duplicates(subset=[_id_col, "idProducto"])
 
-    df_c_lit = _litros(df_c) if "Producto" in df_c.columns else df_c
+    df_c_lit = _litros(df_c)
     litros_tot = int(df_c_lit["Litros"].sum())
 
-    if _id_col:
-        _lit_por_local = df_c_lit.groupby(_id_col)["Litros"].sum() if not df_c_lit.empty else pd.Series(dtype=float)
-        exitosas = int((_lit_por_local > 0).sum())
-        _dedup_local = df_c.drop_duplicates(subset=_id_col)
-        fallidas = int(_dedup_local["Razon"].notna().sum()) if "Razon" in _dedup_local.columns else 0
-    else:
-        exitosas = int((df_c["Litros"] > 0).sum())
-        fallidas = int(df_c["Razon"].notna().sum()) if "Razon" in df_c.columns else 0
+    # Mismo criterio que los donuts globales (helpers/kpis.py)
+    exitosas, fallidas = exitosas_fallidas(df_c)
 
     df_locales_all = cargar_estado_locales()
     chofer_id = None
     if not df_c.empty and "Chofer" in df_c.columns:
         chofer_id = df_c["Chofer"].iloc[0]
+    if chofer_id is not None and not df_locales_all.empty and "Chofer" in df_locales_all.columns:
         df_loc_ch = df_locales_all[df_locales_all["Chofer"] == chofer_id]
     else:
         df_loc_ch = pd.DataFrame()
@@ -293,10 +281,8 @@ def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None
         except (ValueError, TypeError):
             pass
     if emerg_total > 0 and "Emergencia" in df_c.columns and _id_col:
-        emerg_realizadas = int(
-            df_c[df_c["Emergencia"].astype(bool)]
-            .drop_duplicates(subset=_id_col)
-            .__len__()
+        emerg_realizadas = len(
+            df_c[df_c["Emergencia"].astype(bool)].drop_duplicates(subset=_id_col)
         )
 
     razones_df = cargar_razones()

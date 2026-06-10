@@ -3,6 +3,13 @@
 Cada elemento visual distinto es una entrada propia. Tabs orchestradores al final.  
 Basado únicamente en el código real. Lo no verificable está marcado **por confirmar**.
 
+> **Refactor 2026-06:** los 5 KPIs globales se calculan ahora en un único módulo
+> `components/helpers/kpis.py` (`calcular_kpis`, `exitosas_fallidas`, `no_alcanzados`);
+> los donuts CSS, los donuts Plotly y el carrusel solo renderizan. Las constantes
+> (umbrales, productos excluidos, intervalos) viven en `config.py`. La navegación
+> entre vistas usa `st.segmented_control` en `app.py` — solo se renderiza la vista
+> activa (antes `st.tabs` ejecutaba las 11 en cada rerun).
+
 ---
 
 ## Índice
@@ -32,7 +39,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | **Donut desglose Altair** | | |
 | 17 | Donut Altair — Desglose chofer | `tabs/tab_carrusel.py` |
 | **Grids y cards de choferes** | | |
-| 18 | Grid compacto de choferes | `widgets/cards.py` |
+| 18 | ~~Grid compacto de choferes~~ (eliminado — código muerto) | — |
 | 19 | Cards de choferes con tanques | `widgets/cards.py` |
 | 20 | Cards de centros de acopio | `widgets/cards.py` |
 | **Carrusel — subwidgets** | | |
@@ -183,14 +190,11 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ---
 
 ## 10. Donut CSS — Recolecciones Exitosas
-**Archivo:** `components/widgets/donuts.py`  
-**Dataframes:**
-- `df_rec.drop_duplicates("idLocalSistema")` → `_dedup_vis`
-- `exitosas = int((_dedup_vis["Litros"] > 0).sum())`
-- `fallidas = int(_dedup_vis["Razon"].notna().sum())`
-- `pct_exit = round(exitosas / (exitosas + fallidas) * 100)`
+**Archivo:** `components/widgets/donuts.py` — valores de `exitosas_fallidas()` en `helpers/kpis.py`  
+**Criterio (por local único):** exitosa si la suma de `Litros` del local > 0; fallida si tiene `Razon` y no juntó litros. Mutuamente excluyentes e inmune al orden de las filas por producto de `VistaMonitor`.  
+- `pct_exit = _pct(exitosas, exitosas + fallidas)`
 
-**Función:** Donut que muestra el ratio de visitas exitosas (con litros > 0) vs fallidas (con razón de fallo).  
+**Función:** Donut que muestra el ratio de visitas exitosas vs fallidas.  
 **Valor mostrado:** `f"{exitosas:,} / {fallidas:,}"` (exitosas / fallidas)  
 **Colores donut:** verde `#28a745` (exitosas) · rojo `#dc3545` (fallidas).
 
@@ -211,10 +215,10 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ## 12. Donut Plotly — Litros vs Esperado
 **Archivo:** `components/tabs/tab_v2.py` (función `_kpi_col()` dentro de `mostrar_tab_v2()`)  
-**Dataframes:**
-- `_kpis(df_rec, df_locales, data_comp)["litros"]` → litros hoy (suma de `df_rec` filtrado por `_litros()`)
-- `_kpis(...)["esperado"]` → `data_comp["Prom"].sum()`
-- `pct = _kpis(...)["pct_lit"]`
+**Dataframes:** (los KPIs vienen de `calcular_kpis()` en `helpers/kpis.py`)
+- `calcular_kpis(df_rec, df_locales, data_comp)["litros"]` → litros hoy (suma de `df_rec` filtrado por `_litros()`)
+- `calcular_kpis(...)["esperado"]` → `data_comp["Prom"].sum()`
+- `pct = calcular_kpis(...)["pct_lit"]`
 
 **Función:** Donut Plotly (hole 0.72) con pct como anotación central. Mismo KPI que el Donut CSS #7 pero tecnología Plotly y estilos distintos.  
 **Leyenda:** verde `#2d7a2d` Recolectado · gris `#e0e0e0` Restante.  
@@ -225,7 +229,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ## 13. Donut Plotly — Locales Realizados
 **Archivo:** `components/tabs/tab_v2.py`  
 **Dataframes:**
-- `_kpis(...)["pct_loc"]`, `["exitosos_loc"]`, `["total_loc"]`, `["no_alc_loc"]`
+- `calcular_kpis(...)["pct_loc"]`, `["exitosos_loc"]`, `["total_loc"]`, `["no_alc_loc"]`
 - Mismas fuentes que Donut CSS #8 (`df_locales`, `df_rec["Razon"] == 11`)
 - `segmento_alerta = no_alc_loc * 100 // max(total_loc, 1)` → segmento rojo adicional
 
@@ -237,7 +241,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ## 14. Donut Plotly — Prioridad Alta
 **Archivo:** `components/tabs/tab_v2.py`  
 **Dataframes:**
-- `_kpis(...)["pct_alta"]`, `["exitosos_alta"]`, `["total_alta"]`, `["no_alc_alta"]`
+- `calcular_kpis(...)["pct_alta"]`, `["exitosos_alta"]`, `["total_alta"]`, `["no_alc_alta"]`
 - Mismas fuentes que Donut CSS #9 (`df_locales["Prioridad"]`, `df_rec["Razon"] == 11`)
 - `segmento_alerta = no_alc_alta * 100 // max(total_alta, 1)`
 
@@ -249,8 +253,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ## 15. Donut Plotly — Recolecciones Exitosas
 **Archivo:** `components/tabs/tab_v2.py`  
 **Dataframes:**
-- `_kpis(...)["pct_exit"]`, `["exitosas"]`, `["fallidas"]`
-- `df_rec["Litros"]` y `df_rec["Razon"]` deduplicados por `idLocalSistema`
+- `calcular_kpis(...)["pct_exit"]`, `["exitosas"]`, `["fallidas"]` — mismo criterio que el widget #10 (`helpers/kpis.py`)
 - `color_fill="#28a745"`, `color_bg="#dc3545"` → no hay segmento gris, el "bg" es el rojo de fallidas
 
 **Función:** Donut Plotly para exitosas vs fallidas. El agujero verde representa exitosas; el relleno externo rojo representa fallidas.  
@@ -261,7 +264,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ## 16. Donut Plotly — Rutas Cerradas
 **Archivo:** `components/tabs/tab_v2.py`  
 **Dataframes:**
-- `_kpis(...)["pct_cerradas"]`, `["cerradas"]`, `["n_rutas"]`
+- `calcular_kpis(...)["pct_cerradas"]`, `["cerradas"]`, `["n_rutas"]`
 - `_cerrados_set(df_rec)` y `df_locales["Chofer"].nunique()`
 
 **Función:** Donut Plotly para rutas cerradas del día.  
@@ -283,16 +286,10 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ---
 
-## 18. Grid compacto de choferes
-**Archivo:** `components/widgets/cards.py` (función `_grid_choferes()`)  
-**Firma:** `_grid_choferes(df_rec, df_locales, data_comp=None, tab_nombre="", key_prefix="")`  
-**Dataframes:**
-- `data_comp["LitrosHoy"]`, `data_comp["Prom"]` → litros y % por chofer (si `data_comp` es None, calcula desde `df_rec`)
-- `df_locales["Estado"]`, `df_locales["Prioridad"]`, `df_locales["Chofer"]` → barras de locales por chofer
-- `df_rec["FechaObservacion"]` → `_cerrados_set()` para mostrar 🔒
-
-**Función:** Grid de 6 columnas con una tarjeta mini por chofer. Cada tarjeta tiene nombre (link `?nav_carrusel=`), barra de litros, barra de locales, barra de alta. Ordenado por % litros descendente.  
-**Estilos:** grid `repeat(6,1fr) / gap 6px`; card `border 1px solid #c8e6c9 / br 5px / padding 5px 7px / shadow 0 1px 3px rgba(0,0,0,0.04)`; fondo cerrado `#f0f4f0` / abierto `#f9fdf9`; nombre `12px/700/#1a472a`; barras `h 4px / br 2px`; colores ≥80% `#2d7a2d` / <80% `#c0392b`.
+## 18. Grid compacto de choferes — ELIMINADO
+**Eliminado en el refactor 2026-06.** `_grid_choferes()` no se llamaba desde ningún tab
+(código muerto) y además referenciaba `C_ROJO` sin importarlo (NameError latente).
+Si se necesita de nuevo, recuperarlo desde el historial de git.
 
 ---
 
@@ -468,7 +465,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 **Llamada desde app.py:** `mostrar_dashboard(df_sheets, df_rec, choferes_filter=choferes_todos, key_prefix="global_", tab_nombre="Global")`  
 **Dataframes recibidos:** `df_sheets` (sheet Santiago), `df_rec` (todas las recolecciones)  
 **Dataframes calculados internamente:**
-- `data_comp = _preparar_datos(df_sheets, df_rec)` — comparativa litros vs esperado (todos los choferes vía patente)
+- `data_comp` — llega como `data_comp_override=_dc_stgo` desde app.py (solo se recalcula con `_preparar_datos()` si no se pasa override)
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_todos`
 
 **Función:** Renderiza `_css()` → `_header("Global")` → 5 Donuts CSS (widgets #7–#11) → `st.divider()` → Cards de centros de acopio (widget #20).
@@ -480,7 +477,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 **Llamada desde app.py:** `mostrar_cards_choferes(df_sheets, df_rec_stgo, choferes_filter=choferes_stgo, key_prefix="stgo_cards_", tab_nombre="Santiago")`  
 **Dataframes recibidos:** `df_sheets` (sheet Santiago), `df_rec_stgo` (recolecciones solo choferes Santiago)  
 **Dataframes calculados internamente:**
-- `data_comp = _preparar_datos(df_sheets, df_rec_stgo)` — comparativa litros vs esperado vía patente
+- `data_comp` — llega como `data_comp_override=_dc_stgo` desde app.py (solo se recalcula si no se pasa override)
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_stgo`
 
 **Función:** Renderiza `_css()` → `_header("Santiago")` → 5 Donuts CSS modo normal (widgets #7–#11) → `st.divider()` → Cards de choferes con tanques (widget #19). `cols_por_fila` calculado dinámicamente (4/5/6 según cantidad de choferes).
@@ -489,11 +486,11 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ## 35. Tab Regiones
 **Archivo:** `components/tabs/tab_zonas.py`  
-**Llamada desde app.py:** `mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg, key_prefix="reg_cards_", tab_nombre="Regiones", data_comp_override=_data_comp_reg)`  
+**Llamada desde app.py:** `mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg, key_prefix="reg_cards_", tab_nombre="Regiones", data_comp_override=_dc_reg)`  
 **Dataframes recibidos:**
 - `df_regiones` (sheet Regiones — TRIPULACION, PROM, LITROS ESPERADO, Zona)
 - `df_rec_reg` (recolecciones solo choferes Regiones)
-- `data_comp_override=_data_comp_reg` — comparativa precalculada con `_preparar_datos_regiones(df_regiones, df_rec_reg)`
+- `data_comp_override=_dc_reg` — comparativa calculada una sola vez en app.py con `_preparar_datos_regiones(df_regiones, df_rec_reg)`
 
 **Dataframes calculados internamente:**
 - `data_comp = data_comp_override` (no recalcula — usa el override)
@@ -520,16 +517,16 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 - `df_rec` — todas las recolecciones
 - `data_comp_todos` — comparativa Santiago + Regiones concatenadas
 
-**Dataframes cargados internamente:** `cargar_estado_locales()`, `cargar_emergencias()`, `cargar_productos()`, `cargar_razones()`  
+**Dataframes cargados internamente:** `cargar_estado_locales()`, `cargar_emergencias()`, `cargar_razones()` (la columna `Producto` ya viene resuelta por `resolver_recolecciones()` en app.py)  
 **Función:** Slideshow por chofer con `st.pills` + toggle auto-avance (10 seg). Para el chofer activo renderiza: banner con Tanques Litros/Locales/Alta/Emergencias (widget #3–#6 vía `_tanque_b()`) → Donut Altair (#17) + Mini KPIs (#21) → Top5+ (#22) + Top5- (#23) + Productos (#25) + Razones (#24).
 
 ---
 
 ## 38. Tab Carrusel Zonas
 **Archivo:** `components/tabs/tab_carrusel_zonas.py` — decorado con `@st.fragment`  
-**Llamada desde app.py:** `mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg)`  
+**Llamada desde app.py:** `mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg, data_comp_stgo=_dc_stgo, data_comp_reg=_dc_reg)`  
 **Dataframes:** todos los dfs principales de app.py  
-**Función:** Cicla entre 3 vistas: Global (#33) → Santiago (#34) → Regiones (#35). Navegación con ◀/▶ y auto-avance (20 seg). Calcula `_data_comp_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)` internamente.
+**Función:** Cicla entre 3 vistas: Global (#33) → Santiago (#34) → Regiones (#35). Navegación con ◀/▶ y auto-avance (20 seg). Usa las comparativas `_dc_stgo`/`_dc_reg` que llegan de app.py; solo recalcula `_preparar_datos_regiones()` como fallback si no se pasan.
 
 ---
 
@@ -556,10 +553,10 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ## 41. Tab Santiago v2
 **Archivo:** `components/tabs/tab_v2.py`  
-**Llamada desde app.py:** `mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo, data_comp=_dc_stgo_v2, tab_nombre="Santiago")`  
+**Llamada desde app.py:** `mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo, data_comp=_dc_stgo, tab_nombre="Santiago")`  
 **Dataframes:**
 - `df_rec_stgo` — recolecciones Santiago
-- `_dc_stgo_v2 = _preparar_datos(df_sheets, df_rec_stgo)` — comparativa Santiago
+- `_dc_stgo` — la misma comparativa Santiago calculada una sola vez en app.py (antes existía un recálculo `_dc_stgo_v2`, eliminado)
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_stgo`
 
 **Función:** 5 Donuts Plotly KPI (#12–#16) + grid 6col de Cards de chofer v2 (#29), cada una con Mini métricas Litros/Locales/Alta (#26–#28).
@@ -611,7 +608,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | 15 | Donut Plotly Recolecciones | `df_rec["Litros"]`, `df_rec["Razon"]` | — |
 | 16 | Donut Plotly Rutas | `df_rec["FechaObservacion"]`, `df_locales["Chofer"]` | — |
 | 17 | Donut Altair desglose | `df_c["Razon"]`, `df_loc_ch["Estado","Prioridad"]` | `cargar_razones()` |
-| 18 | Grid compacto choferes | `df_rec`, `df_locales`, `data_comp` (opc.) | — |
+| 18 | ~~Grid compacto choferes~~ (eliminado) | — | — |
 | 19 | Cards choferes con tanques | `df_rec`, `df_locales`, `data_comp` | — |
 | 20 | Cards centros de acopio | `df_rec`, `data_comp`, `df_locales` | `cargar_datos_regiones()` |
 | 21 | Mini KPIs carrusel | `df_c["Litros","Razon"]`, `df_loc_ch["Estado","Prioridad"]` | — |
@@ -628,12 +625,12 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | 32 | Semáforo umbrales | — (constantes del módulo) | — |
 | 33 | Tab Global | `df_sheets`, `df_rec` | `cargar_estado_locales()` |
 | 34 | Tab Santiago | `df_sheets`, `df_rec_stgo` | `cargar_estado_locales()` |
-| 35 | Tab Regiones | `df_regiones`, `df_rec_reg`, `_data_comp_reg` | `cargar_estado_locales()` |
+| 35 | Tab Regiones | `df_regiones`, `df_rec_reg`, `_dc_reg` | `cargar_estado_locales()` |
 | 36 | Tab Rendimiento | `df_rec` | `cargar_razones()` |
-| 37 | Tab Carrusel | `df_rec`, `data_comp_todos` | `cargar_estado_locales()`, `cargar_emergencias()`, `cargar_productos()`, `cargar_razones()` |
+| 37 | Tab Carrusel | `df_rec`, `data_comp_todos` | `cargar_estado_locales()`, `cargar_emergencias()`, `cargar_razones()` |
 | 38 | Tab Carrusel Zonas | `df_sheets`, `df_rec`, `df_rec_stgo`, `df_rec_reg`, `df_regiones` | vía tabs internos |
 | 39 | Tab Recolecciones | `df_rec` | vía sub-widgets |
 | 40 | Tab Parametros | `df_rec`, `df_sheets`, `df_regiones` | `cargar_usuarios_vehiculos()`, `cargar_vehiculos()`, `cargar_empleados()` |
-| 41 | Tab Santiago v2 | `df_rec_stgo`, `_dc_stgo_v2` | `cargar_estado_locales()` |
+| 41 | Tab Santiago v2 | `df_rec_stgo`, `_dc_stgo` | `cargar_estado_locales()` |
 | 42 | Tab Global v2 | `df_rec`, `data_comp_todos` | `cargar_estado_locales()` |
 | 43 | Tab Regiones v2 | `df_rec_reg`, `_dc_reg` | `cargar_estado_locales()` |

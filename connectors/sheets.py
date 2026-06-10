@@ -11,10 +11,14 @@ COLUMNAS_INTERES = ["FECHA", "RUTA", "CHOFER", "PEONETA1", "PEONETA2", "PATENTE"
 
 @st.cache_data(ttl=300)
 def cargar_datos() -> pd.DataFrame:
-    gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
-    cfg = st.secrets["sheets"]
-    hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(cfg["sheet_name"])
-    filas = hoja.get(cfg.get("sheet_range", "A:Z"))
+    try:
+        gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
+        cfg = st.secrets["sheets"]
+        hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(cfg["sheet_name"])
+        filas = hoja.get(cfg.get("sheet_range", "A:Z"))
+    except Exception as e:
+        st.error(f"Sin conexión a Google Sheets (Santiago): {e}")
+        return pd.DataFrame()
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
@@ -65,12 +69,16 @@ def mapear_zona(tripulacion: str) -> str | None:
 
 @st.cache_data(ttl=300)
 def cargar_datos_regiones() -> pd.DataFrame:
-    gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
-    cfg = st.secrets["sheets"]
-    hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(
-        cfg.get("sheet_name_regiones", "Control Regiones")
-    )
-    filas = hoja.get("A:F")
+    try:
+        gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
+        cfg = st.secrets["sheets"]
+        hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(
+            cfg.get("sheet_name_regiones", "Control Regiones")
+        )
+        filas = hoja.get("A:F")
+    except Exception as e:
+        st.error(f"Sin conexión a Google Sheets (Regiones): {e}")
+        return pd.DataFrame()
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
@@ -94,7 +102,7 @@ def cargar_datos_regiones() -> pd.DataFrame:
     for col in [col_prom, col_litros]:
         if col:
             df[col] = pd.to_numeric(
-                df[col].astype(str).str.replace(".", "").str.replace(",", "."),
+                df[col].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False),
                 errors="coerce",
             ).fillna(0)
 

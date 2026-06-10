@@ -3,20 +3,14 @@ import pandas as pd
 from connectors.mysql import cargar_usuarios_vehiculos
 from connectors.postgres import cargar_empleados, cargar_vehiculos
 from connectors.sheets import COLUMNAS_INTERES, ZONA_MAP
-
-
-# ── Parámetros centralizados del sistema ─────────────────────────────────────
-UMBRAL_VERDE  = 80   # % ≥ este valor → verde
-UMBRAL_AMARILLO = 50  # % ≥ este valor → amarillo  /  < UMBRAL_VERDE
-# < UMBRAL_AMARILLO → rojo
-
-UMBRAL_COMP_VERDE   = 100  # % vs esperado: ≥ verde (tabla comparativa)
-UMBRAL_COMP_AMARILLO = 70  # % vs esperado: ≥ amarillo
-
-EXCLUIR_LITROS = ["Latas", "Desengrasante"]
-
-INTERVALO_CARRUSEL_SEG  = 10
-INTERVALO_ZONAS_SEG     = 20
+# Parámetros centralizados del sistema — viven en config.py y de ahí
+# los importan también los widgets, así lo que se muestra acá es lo real.
+from config import (
+    EXCLUIR_LITROS,
+    UMBRAL_VERDE, UMBRAL_AMARILLO,
+    UMBRAL_COMP_VERDE, UMBRAL_COMP_AMARILLO,
+    INTERVALO_CARRUSEL_SEG, INTERVALO_ZONAS_SEG,
+)
 
 
 def _widget_semaforo(titulo: str, verde: int, amarillo: int, descripcion: str = ""):
@@ -83,7 +77,7 @@ def mostrar_parametros(
     c1.metric(
         "Productos excluidos del total",
         len(EXCLUIR_LITROS),
-        delta=", ".join(EXCLUIR_LITROS),
+        delta=", ".join(sorted(EXCLUIR_LITROS)),
         delta_color="off",
     )
     c2.metric(

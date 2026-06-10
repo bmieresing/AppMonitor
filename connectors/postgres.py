@@ -12,15 +12,25 @@ def _conectar():
         dbname=cfg["database"],
         user=cfg["user"],
         password=cfg["password"],
+        connect_timeout=10,
     )
 
 
 def _query(sql: str) -> pd.DataFrame:
-    conn = _conectar()
+    """Si la conexión falla, muestra el error y retorna DataFrame vacío
+    para que el monitor no se caiga."""
+    try:
+        conn = _conectar()
+    except psycopg2.Error as e:
+        st.error(f"Sin conexión a PostgreSQL: {e}")
+        return pd.DataFrame()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql)
             rows = cur.fetchall()
+    except psycopg2.Error as e:
+        st.error(f"Error consultando PostgreSQL: {e}")
+        return pd.DataFrame()
     finally:
         conn.close()
     return pd.DataFrame(rows) if rows else pd.DataFrame()

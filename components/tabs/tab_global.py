@@ -14,11 +14,16 @@ def mostrar_dashboard(
     key_prefix: str = "",
     tab_nombre: str = "",
     mostrar_centros: bool = True,
+    data_comp_override: pd.DataFrame | None = None,
 ):
-    result = _preparar_datos(df_sheets, df_rec)
-    data_comp = result if result is not None else pd.DataFrame()
+    if data_comp_override is not None:
+        data_comp = data_comp_override
+    else:
+        result = _preparar_datos(df_sheets, df_rec)
+        data_comp = result if result is not None else pd.DataFrame()
     df_locales = cargar_estado_locales()
-    df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
+    if not df_locales.empty:
+        df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
     _css()
     _header(tab_nombre, key_prefix=key_prefix)
     _donuts_global(df_rec, df_locales, data_comp, tab_nombre=tab_nombre)

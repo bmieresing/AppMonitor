@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 from connectors.mysql import cargar_estado_locales
 from connectors.postgres import cargar_empleados
-
-_EXCLUIR_LITROS = {"Latas", "Desengrasante"}
+from config import EXCLUIR_LITROS, UMBRAL_VERDE, UMBRAL_AMARILLO
 
 _PALETA = [
     ("#1565c0", "#e3f2fd"),  # azul
@@ -18,9 +17,9 @@ _PALETA = [
 
 
 def _semaforo(pct: int) -> str:
-    if pct >= 80:
+    if pct >= UMBRAL_VERDE:
         return "#2d7a2d"
-    if pct >= 50:
+    if pct >= UMBRAL_AMARILLO:
         return "#e67e22"
     return "#c0392b"
 
@@ -42,7 +41,7 @@ def _panel_productos(df_rec: pd.DataFrame):
 
     total_global = float(prod_totales["total"].sum())
     total_aceite = float(
-        prod_totales.loc[~prod_totales["Producto"].isin(_EXCLUIR_LITROS), "total"].sum()
+        prod_totales.loc[~prod_totales["Producto"].isin(EXCLUIR_LITROS), "total"].sum()
     )
 
     col_met, col_vis = st.columns([1, 4])

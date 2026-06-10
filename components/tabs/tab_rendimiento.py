@@ -29,19 +29,24 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         st.warning("Sin datos suficientes.")
         return
 
-    def clasificar(row):
-        if pd.notna(row.get("Razon")) and row.get("Litros", 0) == 0:
-            return "Fallida"
-        return "Exitosa"
-
-    df["Resultado"] = df.apply(clasificar, axis=1)
+    # Fallida = tiene razón de fallo y no juntó litros; el resto exitosa
+    if "Razon" in df.columns:
+        fallida = df["Razon"].notna() & (df["Litros"] == 0)
+    else:
+        fallida = pd.Series(False, index=df.index)
+    df["Resultado"] = fallida.map({True: "Fallida", False: "Exitosa"})
 
     if "idLocalSistema" in df.columns:
+        # Una visita (local) es exitosa si alguna de sus filas por producto lo es
+        exito_local = (
+            (df["Resultado"] == "Exitosa")
+            .groupby([df["NombreChofer"], df["idLocalSistema"]])
+            .any()
+        )
         df_vis = (
-            df.groupby(["NombreChofer", "idLocalSistema"])
-            .apply(lambda g: "Exitosa" if (g["Resultado"] == "Exitosa").any() else "Fallida")
+            exito_local.map({True: "Exitosa", False: "Fallida"})
+            .rename("Resultado")
             .reset_index()
-            .rename(columns={0: "Resultado"})
         )
     else:
         df_vis = df[["NombreChofer", "Resultado"]]
@@ -114,11 +119,15 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
     st.altair_chart(chart, width='stretch')
 
     st.divider()
-    base = df_vis.groupby("NombreChofer").apply(lambda g: pd.Series({
-        "N Exitosas":  int((g["Resultado"] == "Exitosa").sum()),
-        "N Fallidas":  int((g["Resultado"] == "Fallida").sum()),
-        "Total":       len(g),
-    })).reset_index().rename(columns={"NombreChofer": "Chofer"})
+    base = (
+        df_vis.groupby("NombreChofer")["Resultado"]
+        .value_counts()
+        .unstack(fill_value=0)
+        .reindex(columns=["Exitosa", "Fallida"], fill_value=0)
+        .reset_index()
+        .rename(columns={"NombreChofer": "Chofer", "Exitosa": "N Exitosas", "Fallida": "N Fallidas"})
+    )
+    base["Total"] = base["N Exitosas"] + base["N Fallidas"]
     base["% Exitosas"] = (base["N Exitosas"] / base["Total"] * 100).round(1)
     base["% Fallidas"] = (base["N Fallidas"] / base["Total"] * 100).round(1)
     resumen = base[["Chofer", "N Exitosas", "N Fallidas", "% Exitosas", "% Fallidas"]].sort_values("% Exitosas", ascending=False)

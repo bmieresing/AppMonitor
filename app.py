@@ -1,11 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as _cv1
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-TZ = ZoneInfo("America/Santiago")
 
 from connectors.sheets import cargar_datos, cargar_datos_regiones
 from connectors.mysql import cargar_recolecciones, cargar_usuarios_vehiculos
@@ -24,7 +19,7 @@ from components.tabs.tab_v2 import mostrar_tab_v2
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
-# Auth: Google OAuth en producción, contraseña en local
+# Auth: la maneja Streamlit Cloud (whitelist de correos). La app no implementa auth propia.
 
 # Auto-refresh
 intervalo = int(st.secrets.get("refresh_interval_seconds", 300)) * 1000
@@ -45,7 +40,8 @@ df_veh = cargar_vehiculos()
 vehiculos_stgo = set(df_veh[df_veh["plate"].isin(stgo_patentes)]["id"].astype(str).tolist()) if not df_veh.empty else set()
 
 df_uv = cargar_usuarios_vehiculos()
-df_uv["Vehiculo"] = df_uv["Vehiculo"].astype(str)
+if not df_uv.empty:
+    df_uv["Vehiculo"] = df_uv["Vehiculo"].astype(str)
 choferes_stgo  = set(df_uv[df_uv["Vehiculo"].isin(vehiculos_stgo)]["Chofer"].tolist()) if not df_uv.empty else set()
 choferes_todos = set(df_uv["Chofer"].tolist()) if not df_uv.empty else set()
 choferes_reg   = choferes_todos - choferes_stgo
@@ -53,12 +49,18 @@ choferes_reg   = choferes_todos - choferes_stgo
 df_rec_stgo = df_rec[df_rec["Chofer"].isin(choferes_stgo)].copy() if "Chofer" in df_rec.columns else pd.DataFrame()
 df_rec_reg  = df_rec[df_rec["Chofer"].isin(choferes_reg)].copy()  if "Chofer" in df_rec.columns else pd.DataFrame()
 
-# data_comp combinado para el carrusel (litros vs esperado por chofer)
+# Comparativas litros vs esperado — se calculan UNA vez y se pasan a todas
+# las vistas (antes cada tab recalculaba la suya)
 _dc_stgo = _preparar_datos(df_sheets, df_rec_stgo)
 _dc_reg  = _preparar_datos_regiones(df_regiones, df_rec_reg)
 _dc_stgo = _dc_stgo if _dc_stgo is not None else pd.DataFrame()
 _dc_reg  = _dc_reg  if _dc_reg  is not None else pd.DataFrame()
 data_comp_todos = pd.concat([_dc_stgo, _dc_reg], ignore_index=True) if not (_dc_stgo.empty and _dc_reg.empty) else pd.DataFrame()
+
+VISTAS = [
+    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento",
+    "Carrusel", "Carrusel Zonas", "Parametros", "Santiago v2", "Global v2", "Regiones v2",
+]
 
 # Navegación desde card de chofer (link ?nav_carrusel=Nombre)
 _nav_target = st.query_params.get("nav_carrusel", "")
@@ -66,67 +68,68 @@ if _nav_target:
     _ch_sorted = sorted(df_rec["NombreChofer"].dropna().unique().tolist()) if not df_rec.empty and "NombreChofer" in df_rec.columns else []
     if _nav_target in _ch_sorted:
         st.session_state.carrusel_idx = _ch_sorted.index(_nav_target)
-    st.session_state._do_nav_car = True
+    st.session_state.nav_vista = "Carrusel"
     st.query_params.clear()
     st.rerun()
 
-if st.session_state.get("_do_nav_car"):
-    st.session_state._do_nav_car = False
-    _cv1.html("""<script>
-setTimeout(function(){
-    var t=window.parent.document.querySelectorAll('[data-baseweb="tab"],[role="tab"]');
-    for(var i=0;i<t.length;i++){
-        if(t[i].textContent.trim()==='Carrusel'){t[i].click();break;}
-    }
-},300);
-</script>""", height=1)
+# Selector de vista: a diferencia de st.tabs, solo se ejecuta y renderiza
+# la vista activa (st.tabs corría las 11 en cada rerun)
+if "nav_vista" not in st.session_state:
+    st.session_state.nav_vista = "Global"
+vista = st.segmented_control(
+    "Vista", VISTAS, key="nav_vista", label_visibility="collapsed"
+) or "Global"
 
-tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz, tab_params, tab_v2, tab_global_v2, tab_reg_v2 = st.tabs([
-    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas", "Parametros", "Santiago v2", "Global v2", "Regiones v2"
-])
+if vista == "Global":
+    mostrar_dashboard(df_sheets, df_rec, choferes_filter=choferes_todos,
+                      key_prefix="global_", tab_nombre="Global",
+                      data_comp_override=_dc_stgo)
 
-with tab_global:
-    mostrar_dashboard(df_sheets, df_rec, choferes_filter=choferes_todos, key_prefix="global_", tab_nombre="Global")
+elif vista == "Santiago":
+    mostrar_cards_choferes(df_sheets, df_rec_stgo, choferes_filter=choferes_stgo,
+                           key_prefix="stgo_cards_", tab_nombre="Santiago",
+                           data_comp_override=_dc_stgo)
 
-with tab_stgo:
-    mostrar_cards_choferes(df_sheets, df_rec_stgo, choferes_filter=choferes_stgo, key_prefix="stgo_cards_", tab_nombre="Santiago")
+elif vista == "Regiones":
+    mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg,
+                           key_prefix="reg_cards_", tab_nombre="Regiones",
+                           data_comp_override=_dc_reg)
 
-with tab_reg:
-    _data_comp_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)
-    mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg, key_prefix="reg_cards_", tab_nombre="Regiones", data_comp_override=_data_comp_reg)
-
-with tab_rec_tab:
+elif vista == "Recolecciones":
     _css()
     _header("Recolecciones")
     mostrar_tab_recolecciones(df_rec)
 
-with tab_rendimiento:
+elif vista == "Rendimiento":
     _css()
     _header("Rendimiento")
     mostrar_rendimiento(df_rec)
 
-with tab_carrusel:
+elif vista == "Carrusel":
     _css()
     _header("Carrusel")
     mostrar_carrusel(df_rec, data_comp=data_comp_todos)
 
-with tab_cz:
+elif vista == "Carrusel Zonas":
     _css()
     _header("Carrusel Zonas")
-    mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg)
+    mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones,
+                           choferes_todos, choferes_stgo, choferes_reg,
+                           data_comp_stgo=_dc_stgo, data_comp_reg=_dc_reg)
 
-with tab_params:
+elif vista == "Parametros":
     _css()
     _header("Parametros")
     mostrar_parametros(df_rec, df_sheets, df_regiones, choferes_stgo, choferes_reg)
 
-with tab_v2:
-    _dc_stgo_v2 = _preparar_datos(df_sheets, df_rec_stgo)
-    _dc_stgo_v2 = _dc_stgo_v2 if _dc_stgo_v2 is not None else pd.DataFrame()
-    mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo, data_comp=_dc_stgo_v2, tab_nombre="Santiago")
+elif vista == "Santiago v2":
+    mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo,
+                   data_comp=_dc_stgo, tab_nombre="Santiago")
 
-with tab_global_v2:
-    mostrar_tab_v2(df_rec, choferes_filter=choferes_todos, data_comp=data_comp_todos, tab_nombre="Global")
+elif vista == "Global v2":
+    mostrar_tab_v2(df_rec, choferes_filter=choferes_todos,
+                   data_comp=data_comp_todos, tab_nombre="Global")
 
-with tab_reg_v2:
-    mostrar_tab_v2(df_rec_reg, choferes_filter=choferes_reg, data_comp=_dc_reg, tab_nombre="Regiones")
+elif vista == "Regiones v2":
+    mostrar_tab_v2(df_rec_reg, choferes_filter=choferes_reg,
+                   data_comp=_dc_reg, tab_nombre="Regiones")

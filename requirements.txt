@@ -1,5 +1,6 @@
-streamlit>=1.36
+streamlit>=1.46
 plotly
+altair
 streamlit-autorefresh
 pandas
 gspread

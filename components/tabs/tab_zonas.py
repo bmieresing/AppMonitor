@@ -24,7 +24,8 @@ def mostrar_cards_choferes(
         data_comp = result if result is not None else pd.DataFrame()
 
     df_locales = cargar_estado_locales()
-    df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
+    if not df_locales.empty:
+        df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
 
     n_choferes = len(data_comp) if not data_comp.empty else 0
     cols = 6 if n_choferes > 12 else 5 if n_choferes > 6 else 4

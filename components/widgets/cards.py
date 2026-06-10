@@ -4,110 +4,7 @@ import pandas as pd
 from connectors.mysql import cargar_estado_locales
 from connectors.sheets import cargar_datos_regiones
 from components.helpers.data_prep import _mapa_empleados, _cerrados_set, _litros, _pct
-from components.widgets.tanque import _tanque, C_VERDE, C_VERDE_OSC
-
-
-def _grid_choferes(
-    df_rec: pd.DataFrame,
-    df_locales: pd.DataFrame,
-    data_comp: pd.DataFrame | None = None,
-    tab_nombre: str = "",
-    key_prefix: str = "",
-):
-    mapa = _mapa_empleados()
-
-    if data_comp is not None and not data_comp.empty and "LitrosHoy" in data_comp.columns:
-        litros_ch = data_comp.set_index("Chofer")["LitrosHoy"].to_dict()
-        prom_ch   = data_comp.set_index("Chofer")["Prom"].to_dict()
-        pct_ch    = {n: _pct(l, prom_ch.get(n, 0)) for n, l in litros_ch.items()}
-    else:
-        df_lit = _litros(df_rec).copy() if not df_rec.empty else pd.DataFrame()
-        if not df_lit.empty and "Chofer" in df_lit.columns:
-            if "NombreChofer" not in df_lit.columns:
-                df_lit["NombreChofer"] = pd.to_numeric(df_lit["Chofer"], errors="coerce").map(mapa).fillna(df_lit["Chofer"].astype(str))
-            litros_ch = df_lit.groupby("NombreChofer")["Litros"].sum().to_dict()
-        else:
-            litros_ch = {}
-        pct_ch = {n: 0 for n in litros_ch}
-
-    locales_ch: dict[str, dict] = {}
-    df_loc = df_locales.copy() if not df_locales.empty else pd.DataFrame()
-    if not df_loc.empty and "Chofer" in df_loc.columns:
-        df_loc["NombreChofer"] = pd.to_numeric(df_loc["Chofer"], errors="coerce").map(mapa).fillna(df_loc["Chofer"].astype(str))
-        df_loc["EsAlta"] = (
-            df_loc["Prioridad"].astype(str).str.upper().str.startswith("ALTA")
-            if "Prioridad" in df_loc.columns else False
-        )
-        for nombre, grp in df_loc.groupby("NombreChofer"):
-            grp_alta = grp[grp["EsAlta"]]
-            locales_ch[nombre] = {
-                "total": (int((grp["Estado"] == "Realizado").sum()), len(grp)),
-                "alta":  (int((grp_alta["Estado"] == "Realizado").sum()), len(grp_alta)),
-            }
-
-    cerrados = _cerrados_set(df_rec)
-
-    choferes = sorted(
-        set(list(litros_ch.keys()) + list(locales_ch.keys())),
-        key=lambda n: pct_ch.get(n, 0), reverse=True,
-    )
-    if not choferes:
-        return
-
-    def _barra(pct_fill: int, pct_label: int, sub: str, mostrar_pct: bool = True) -> str:
-        color = C_VERDE if pct_label >= 80 else C_ROJO
-        if not mostrar_pct:
-            color = "#1565c0"
-        w = min(pct_fill, 100)
-        pct_span = f'<span style="font-weight:700;color:{color}">{pct_label}%</span>' if mostrar_pct else ""
-        return (
-            f'<div style="margin-bottom:2px">'
-            f'<div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-bottom:1px">'
-            f'<span>{sub}</span>{pct_span}'
-            f'</div>'
-            f'<div style="height:4px;border-radius:2px;background:#e8e8e8;overflow:hidden">'
-            f'<div style="height:100%;width:{w}%;background:{color};border-radius:2px"></div>'
-            f'</div></div>'
-        )
-
-    cards = []
-    for nombre in choferes:
-        litros = litros_ch.get(nombre, 0)
-        pct_lit = pct_ch.get(nombre, 0)
-        barra_lit = _barra(min(pct_lit, 100), pct_lit, f"💧 {int(litros):,} L")
-
-        barras_loc = ""
-        if nombre in locales_ch:
-            r_tot, t_tot = locales_ch[nombre]["total"]
-            r_alt, t_alt = locales_ch[nombre]["alta"]
-            barras_loc = _barra(_pct(r_tot, t_tot), _pct(r_tot, t_tot), f"📋 {r_tot}/{t_tot}")
-            if t_alt > 0:
-                p = _pct(r_alt, t_alt)
-                barras_loc += _barra(p, p, f"⭐ {r_alt}/{t_alt}")
-
-        cerrado = nombre in cerrados
-        candado = (
-            '<span style="font-size:12px;margin-left:3px;vertical-align:middle;flex-shrink:0;'
-            'font-family:\'Apple Color Emoji\',\'Segoe UI Emoji\',\'Noto Color Emoji\',sans-serif">🔒</span>'
-        ) if cerrado else ''
-        bg = '#f0f4f0' if cerrado else '#f9fdf9'
-        link = f'?nav_carrusel={urllib.parse.quote(nombre)}'
-        cards.append(
-            f'<div style="border:1px solid #c8e6c9;border-radius:5px;padding:5px 7px;'
-            f'background:{bg};box-shadow:0 1px 3px rgba(0,0,0,0.04)">'
-            f'<div style="display:flex;align-items:center;font-weight:700;font-size:12px;'
-            f'color:{C_VERDE_OSC};margin-bottom:3px;overflow:hidden" title="{nombre}">'
-            f'<a href="{link}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
-            f'text-decoration:none;color:{C_VERDE_OSC}">{nombre}</a>'
-            f'{candado}</div>'
-            f'{barra_lit}{barras_loc}</div>'
-        )
-
-    st.markdown(
-        f'<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:2px 0">'
-        f'{"".join(cards)}</div>',
-        unsafe_allow_html=True,
-    )
+from components.widgets.tanque import _tanque, C_VERDE_OSC
 
 
 def _cards_choferes_tanque(
@@ -149,8 +46,8 @@ def _cards_choferes_tanque(
     data_sorted = data_comp.sort_values("Pct", ascending=False).reset_index(drop=True)
 
     cards_html = []
-    for nombre in data_sorted["Chofer"].tolist():
-        fila = data_sorted[data_sorted["Chofer"] == nombre].iloc[0]
+    for _, fila in data_sorted.iterrows():
+        nombre = fila["Chofer"]
         litros_hoy = float(fila.get("LitrosHoy", 0))
         prom = float(fila.get("Prom", 0))
         pct_lit = _pct(litros_hoy, prom)

@@ -1,15 +1,26 @@
+import unicodedata
+
 import pandas as pd
 from connectors.mysql import cargar_usuarios_vehiculos
 from connectors.postgres import cargar_empleados, cargar_vehiculos
-
-_EXCLUIR_LITROS = {"Latas", "Desengrasante"}
+from config import EXCLUIR_LITROS
 
 
 def _litros(df: pd.DataFrame) -> pd.DataFrame:
     """df_rec filtrado: excluye productos que no cuentan como litros de aceite."""
     if "Producto" not in df.columns or df.empty:
         return df
-    return df[~df["Producto"].isin(_EXCLUIR_LITROS)]
+    return df[~df["Producto"].isin(EXCLUIR_LITROS)]
+
+
+def _norm_key(s: pd.Series) -> pd.Series:
+    """Clave de join por nombre: minúsculas, sin tildes, espacios colapsados.
+    El sheet y PostgreSQL no siempre escriben el nombre exactamente igual."""
+    return (
+        s.astype(str).str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+        .map(lambda x: unicodedata.normalize("NFKD", x).encode("ascii", "ignore").decode())
+    )
 
 
 def _pct(r, t) -> int:
@@ -44,7 +55,7 @@ def _preparar_datos(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame) -> pd.DataF
 
     prom_df = df_sheets[[col_patente, col_prom]].copy()
     prom_df["Prom"] = pd.to_numeric(
-        prom_df[col_prom].astype(str).str.replace(".", "").str.replace(",", "."),
+        prom_df[col_prom].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False),
         errors="coerce",
     )
     prom_df = prom_df[[col_patente, "Prom"]].rename(columns={col_patente: "Patente"})
@@ -66,10 +77,7 @@ def _preparar_datos(df_sheets: pd.DataFrame, df_mysql: pd.DataFrame) -> pd.DataF
             .drop_duplicates("Patente")
         )
 
-    df_mysql_lit = (
-        df_mysql[~df_mysql["Producto"].isin(_EXCLUIR_LITROS)]
-        if "Producto" in df_mysql.columns else df_mysql
-    )
+    df_mysql_lit = _litros(df_mysql)
     litros_por_patente = (
         df_mysql_lit[df_mysql_lit["Litros"] > 0]
         .groupby("Patente_Real")["Litros"]
@@ -106,7 +114,7 @@ def _preparar_datos_regiones(df_reg: pd.DataFrame, df_rec: pd.DataFrame) -> pd.D
     prom_s.columns = ["Chofer"]
     prom_s["Prom"] = df_reg[col_prom].fillna(0) if col_prom else 0.0
     prom_s = prom_s[prom_s["Chofer"].notna()].copy()
-    prom_s["_key"] = prom_s["Chofer"].str.strip().str.lower()
+    prom_s["_key"] = _norm_key(prom_s["Chofer"])
 
     if not df_rec.empty and "NombreChofer" in df_rec.columns:
         lit_s = (
@@ -116,7 +124,7 @@ def _preparar_datos_regiones(df_reg: pd.DataFrame, df_rec: pd.DataFrame) -> pd.D
             .reset_index()
             .rename(columns={"NombreChofer": "Chofer_rec", "Litros": "LitrosHoy"})
         )
-        lit_s["_key"] = lit_s["Chofer_rec"].str.strip().str.lower()
+        lit_s["_key"] = _norm_key(lit_s["Chofer_rec"])
         result = prom_s.merge(lit_s[["_key", "LitrosHoy"]], on="_key", how="outer")
         name_by_key = lit_s.set_index("_key")["Chofer_rec"].to_dict()
         mask = result["Chofer"].isna()

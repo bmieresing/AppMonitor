@@ -2,6 +2,14 @@
 
 Documento generado a partir del código real en `App Monitor/`. Cada entrada indica origen, query SQL exacta (cuando aplica), transformaciones y columnas finales. Lo que no pudo verificarse en el código está marcado **por confirmar**.
 
+> **Refactor 2026-06:** las comparativas `_dc_stgo` / `_dc_reg` / `data_comp_todos` se
+> calculan UNA sola vez en app.py y se pasan a todas las vistas (se eliminaron los
+> recálculos `_dc_stgo_v2` y los internos de los tabs). Los KPIs globales se calculan en
+> `components/helpers/kpis.py`. Las constantes (EXCLUIR_LITROS, umbrales, intervalos)
+> viven en `config.py`. Los conectores manejan errores de conexión: si una fuente está
+> caída muestran `st.error` y retornan DataFrame vacío (la app no se cae). Las
+> referencias a números de línea de app.py pueden estar desplazadas tras el refactor.
+
 ---
 
 ## Índice
@@ -26,7 +34,7 @@ Documento generado a partir del código real en `App Monitor/`. Cada entrada ind
 | 16 | `_dc_stgo` | Derivado — app.py | `app.py` |
 | 17 | `_dc_reg` | Derivado — app.py | `app.py` |
 | 18 | `data_comp_todos` | Derivado — app.py | `app.py` |
-| 19 | `_dc_stgo_v2` | Derivado — app.py (tab v2) | `app.py` |
+| 19 | ~~`_dc_stgo_v2`~~ (eliminado — se reusa `_dc_stgo`) | — | — |
 | 20 | `prom_df` | Intermedio — `_preparar_datos()` | `components/helpers/data_prep.py` |
 | 21 | `chofer_por_patente` | Intermedio — `_preparar_datos()` | `components/helpers/data_prep.py` |
 | 22 | `litros_por_patente` | Intermedio — `_preparar_datos()` | `components/helpers/data_prep.py` |
@@ -79,7 +87,7 @@ Columnas confirmadas como usadas por el resto de la app: `Fecha`, `Litros`, `Cho
 **Variable donde se guarda:**
 - `df_locales` — en `tab_global.py`, `tab_zonas.py`, `tab_v2.py` (ya filtrado por `choferes_filter`)
 - `df_locales_all` — en `tab_carrusel.py` (sin filtrar; luego se filtra a `df_loc_ch` por chofer activo)
-- `df_loc` — en `cards.py` (`_cards_choferes_tanque`, `_grid_choferes`) y en `tab_recolecciones.py` (`_cards_choferes`)
+- `df_loc` — en `cards.py` (`_cards_choferes_tanque`) y en `tab_recolecciones.py` (`_cards_choferes`)
 
 **Base de datos:** MySQL  
 **Query:**
@@ -422,12 +430,9 @@ Estos se crean una sola vez al inicio de la aplicación y se pasan como argument
 
 ---
 
-### 19. `_dc_stgo_v2`
-**Archivo:** `app.py` (líneas 124–125, dentro del bloque `with tab_v2`)  
-**Origen:** `_preparar_datos(df_sheets, df_rec_stgo)` — mismo cálculo que `_dc_stgo` pero recalculado en el bloque del tab v2  
-**Nota:** Es idéntico en contenido a `_dc_stgo` en condiciones normales; es un recálculo separado para mantener independencia del tab.  
-**Columnas finales:** Idénticas a `_dc_stgo`  
-**Depende de:** `df_sheets`, `df_rec_stgo`
+### 19. `_dc_stgo_v2` — ELIMINADO
+**Eliminado en el refactor 2026-06.** Era un recálculo idéntico a `_dc_stgo` dentro del
+bloque del tab v2; ahora el tab Santiago v2 recibe directamente `_dc_stgo` desde app.py.
 
 ---
 
@@ -526,18 +531,17 @@ Estos se crean dentro de funciones de tab y nunca salen de su scope. Se document
 
 ### 26. `data_comp` (interno de `mostrar_dashboard` y `mostrar_cards_choferes`)
 **Archivos:** `tab_global.py`, `tab_zonas.py`  
-**Origen:** `_preparar_datos(df_sheets, df_rec)` calculado localmente  
-**Nota:** Para Santiago se calcula de `df_sheets` + `df_rec` (o `df_rec_stgo`). Para Regiones se usa `data_comp_override` (= `_dc_reg`) pasado desde app.py o tab_carrusel_zonas.  
+**Origen:** Llega como `data_comp_override` desde app.py (`_dc_stgo` para Global/Santiago, `_dc_reg` para Regiones). El cálculo local con `_preparar_datos()` quedó solo como fallback cuando no se pasa override.  
 **Columnas finales:** Idénticas a `_dc_stgo` (ver #16)  
 **Depende de:** `df_sheets` (o `df_regiones`), `df_rec`
 
 ---
 
 ### 27. `_data_comp_reg`
-**Archivos:** `app.py` (bloque tab_reg, línea 95) y `tab_carrusel_zonas.py` (línea 23)  
-**Origen:** `_preparar_datos_regiones(df_regiones, df_rec_reg)` — mismo cálculo que `_dc_reg` pero recalculado en el momento de renderizar el tab  
+**Archivo:** `tab_carrusel_zonas.py`  
+**Origen:** Alias de `_dc_reg` — llega como parámetro `data_comp_reg` desde app.py. Solo se recalcula con `_preparar_datos_regiones(df_regiones, df_rec_reg)` como fallback si no se pasa. (Antes del refactor 2026-06 se recalculaba también en el bloque tab_reg de app.py.)  
 **Columnas finales:** Idénticas a `_dc_reg` (ver #17)  
-**Depende de:** `df_regiones`, `df_rec_reg`
+**Depende de:** `_dc_reg` (o `df_regiones` + `df_rec_reg` en el fallback)
 
 ---
 
@@ -565,14 +569,14 @@ Estos se crean dentro de funciones de tab y nunca salen de su scope. Se document
 
 ### 30. `df_c`
 **Archivo:** `components/tabs/tab_carrusel.py`  
-**Origen:** `df_rec` filtrado y transformado para el chofer activo del carrusel  
+**Origen:** `df_rec` filtrado para el chofer activo del carrusel  
 **Transformaciones:**
 1. Filtro: `df_rec[df_rec["NombreChofer"] == chofer].copy()`
-2. Agrega columna `Producto`: mapea `idProducto` usando `cargar_productos()` (si no está ya en `df_rec`, lo re-mapea)
-3. Deduplica por `(idLocalSistema, idProducto)` si ambas columnas existen
+2. Deduplica por `(idLocalSistema, idProducto)` si ambas columnas existen
 
-**Columnas finales:** Las de `df_rec` + `Producto` (si el mapeo adicional aplica)  
-**Depende de:** `df_rec`, `cargar_productos()`
+**Nota:** la columna `Producto` ya viene resuelta por `resolver_recolecciones()` en app.py (se eliminó el re-mapeo con `cargar_productos()` que hacía el carrusel).  
+**Columnas finales:** Las de `df_rec`  
+**Depende de:** `df_rec`
 
 ---
 
