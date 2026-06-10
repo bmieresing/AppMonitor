@@ -26,7 +26,6 @@ def _semaforo(pct: int) -> str:
 
 
 def _panel_productos(df_rec: pd.DataFrame):
-    """Fila superior: cards de litros totales por tipo de producto."""
     if df_rec.empty or "Producto" not in df_rec.columns:
         return
 
@@ -59,11 +58,11 @@ def _panel_productos(df_rec: pd.DataFrame):
         chips += (
             f'<div style="flex:1;min-width:130px;background:{col_bg};'
             f'border:1px solid {col_t}44;border-radius:10px;padding:12px 16px;text-align:center">'
-            f'<div style="font-size:11px;font-weight:700;color:{col_t};letter-spacing:.4px;margin-bottom:4px">'
+            f'<div style="font-size:12px;font-weight:700;color:{col_t};letter-spacing:.4px;margin-bottom:4px">'
             f'{str(row["Producto"]).upper()}</div>'
             f'<div style="font-size:26px;font-weight:900;color:{col_t};line-height:1.1">'
             f'{row["total"]:,.0f} L</div>'
-            f'<div style="font-size:10px;color:{col_t}99;margin-top:3px">'
+            f'<div style="font-size:12px;color:{col_t}99;margin-top:3px">'
             f'{int(row["visitas"])} visitas · {pct:.1f}%</div>'
             f'<div style="background:{col_t}22;border-radius:4px;height:5px;margin-top:7px">'
             f'<div style="background:{col_t};width:{pct:.0f}%;height:100%;border-radius:4px"></div>'
@@ -78,7 +77,6 @@ def _panel_productos(df_rec: pd.DataFrame):
 
 
 def _cards_choferes(df_rec: pd.DataFrame):
-    """Grid de cards detalladas por chofer: litros, desglose por producto y locales."""
     empleados = cargar_empleados()
     mapa = empleados.set_index("id")["nombre"] if not empleados.empty else pd.Series(dtype=str)
 
@@ -86,7 +84,6 @@ def _cards_choferes(df_rec: pd.DataFrame):
     if not df.empty and "NombreChofer" not in df.columns and "Chofer" in df.columns:
         df["NombreChofer"] = df["Chofer"].map(mapa).fillna(df["Chofer"].astype(str))
 
-    # Cargar locales del día
     df_loc = cargar_estado_locales()
     if not df_loc.empty and "Chofer" in df_loc.columns:
         df_loc = df_loc.copy()
@@ -96,7 +93,6 @@ def _cards_choferes(df_rec: pd.DataFrame):
         else:
             df_loc["Prio"] = "Normal"
 
-    # Litros y desglose por producto por chofer
     litros_ch: dict[str, float] = {}
     prod_ch: dict[str, dict] = {}
     if not df.empty and "NombreChofer" in df.columns:
@@ -109,7 +105,6 @@ def _cards_choferes(df_rec: pd.DataFrame):
                     .to_dict()
                 )
 
-    # Locales realizados/total por chofer y prioridad
     loc_ch: dict[str, dict] = {}
     if not df_loc.empty and "NombreChofer" in df_loc.columns:
         for (nombre, prio), grp in df_loc.groupby(["NombreChofer", "Prio"]):
@@ -127,7 +122,6 @@ def _cards_choferes(df_rec: pd.DataFrame):
 
     max_lit = max(litros_ch.values(), default=1)
 
-    # Colores consistentes por producto (mismo orden que panel superior)
     prods_orden = sorted(
         {p for prods in prod_ch.values() for p in prods},
         key=lambda p: -sum(prods.get(p, 0) for prods in prod_ch.values()),
@@ -146,20 +140,18 @@ def _cards_choferes(df_rec: pd.DataFrame):
             f'</div>'
         )
 
-        # Desglose por producto
         prods_html = ""
         for prod, lit in prod_ch.get(nombre, {}).items():
             col_t, col_bg = col_prod.get(prod, ("#555", "#f0f0f0"))
             prods_html += (
                 f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">'
-                f'<span style="font-size:9px;background:{col_bg};color:{col_t};padding:1px 5px;'
+                f'<span style="font-size:12px;background:{col_bg};color:{col_t};padding:1px 5px;'
                 f'border-radius:3px;font-weight:600;max-width:65%;overflow:hidden;'
                 f'text-overflow:ellipsis;white-space:nowrap">{prod}</span>'
-                f'<span style="font-size:9px;color:#333;font-weight:700">{lit:,.0f} L</span>'
+                f'<span style="font-size:12px;color:#333;font-weight:700">{lit:,.0f} L</span>'
                 f'</div>'
             )
 
-        # Locales con barra
         locs_html = ""
         for prio, emoji in [("Normal", "📋")]:
             if prio in loc_ch.get(nombre, {}):
@@ -169,7 +161,7 @@ def _cards_choferes(df_rec: pd.DataFrame):
                 w = min(pct, 100)
                 locs_html += (
                     f'<div style="margin-bottom:3px">'
-                    f'<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-bottom:1px">'
+                    f'<div style="display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:1px">'
                     f'<span>{emoji} {prio}</span>'
                     f'<span style="color:{c};font-weight:700">{r}/{t}</span></div>'
                     f'<div style="background:#e0e0e0;border-radius:2px;height:4px">'
@@ -183,7 +175,7 @@ def _cards_choferes(df_rec: pd.DataFrame):
         cards.append(
             f'<div style="border:1px solid {color_lit}44;border-top:3px solid {color_lit};'
             f'border-radius:7px;padding:9px 11px;background:#fafafa">'
-            f'<div style="font-weight:700;font-size:11px;color:#1a2e1a;margin-bottom:2px;'
+            f'<div style="font-weight:700;font-size:12px;color:#1a2e1a;margin-bottom:2px;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="{nombre}">{nombre}</div>'
             f'<div style="font-size:20px;font-weight:900;color:{color_lit};line-height:1">'
             f'{total:,.0f} L</div>'
@@ -201,7 +193,6 @@ def _cards_choferes(df_rec: pd.DataFrame):
 
 
 def mostrar_tab_recolecciones(df_rec: pd.DataFrame):
-    """Tab Recolecciones: resumen por producto + cards detalladas por chofer."""
     if df_rec.empty:
         st.info("Sin datos de recolecciones para hoy.")
         return

@@ -21,10 +21,9 @@ INTERVALO_ZONAS_SEG     = 20
 
 def _widget_semaforo(titulo: str, verde: int, amarillo: int, descripcion: str = ""):
     """Barra horizontal con las tres zonas coloreadas y los umbrales marcados."""
-    # Anchos proporcionales de cada banda
-    w_rojo     = amarillo              # 0 → amarillo
-    w_amarillo = verde - amarillo      # amarillo → verde
-    w_verde    = 100 - verde           # verde → 100
+    w_rojo     = amarillo
+    w_amarillo = verde - amarillo
+    w_verde    = 100 - verde
 
     st.markdown(f"**{titulo}**")
     if descripcion:
@@ -32,7 +31,7 @@ def _widget_semaforo(titulo: str, verde: int, amarillo: int, descripcion: str = 
 
     barra = f"""
     <div style="margin:4px 0 2px">
-        <div style="display:flex;border-radius:6px;overflow:hidden;height:28px;font-size:11px;font-weight:700">
+        <div style="display:flex;border-radius:6px;overflow:hidden;height:28px;font-size:12px;font-weight:700">
             <div style="width:{w_rojo}%;background:#c0392b;display:flex;align-items:center;
                         justify-content:center;color:white;gap:4px">
                 🔴 &lt; {amarillo}%
@@ -58,7 +57,6 @@ def mostrar_parametros(
     choferes_stgo: set,
     choferes_reg: set,
 ):
-    # ── Semáforos ─────────────────────────────────────────────────────────────
     st.subheader("Semáforos del sistema")
 
     col_s1, col_s2 = st.columns(2)
@@ -79,7 +77,6 @@ def mostrar_parametros(
 
     st.divider()
 
-    # ── Parámetros operacionales ──────────────────────────────────────────────
     st.subheader("Parámetros operacionales")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -98,7 +95,6 @@ def mostrar_parametros(
 
     st.divider()
 
-    # ── Mapa de zonas ─────────────────────────────────────────────────────────
     st.subheader("Mapa de zonas — Regiones")
     st.caption("Prefijos detectados al inicio de la columna Tripulación para asignar zona.")
     df_zonas = pd.DataFrame(ZONA_MAP, columns=["Prefijo detectado", "Zona asignada"])
@@ -112,7 +108,6 @@ def mostrar_parametros(
 
     st.divider()
 
-    # ── Columnas leídas de los sheets ─────────────────────────────────────────
     st.subheader("Columnas leídas de los sheets")
     col_sh1, col_sh2 = st.columns(2)
 
@@ -149,7 +144,6 @@ def mostrar_parametros(
         else:
             st.caption("Sin datos hoy")
 
-    # ── Cadena Patente → Chofer (diagnóstico) ────────────────────────────────
     with st.expander("Diagnóstico cadena Patente → Vehículo → Chofer (Santiago)"):
         usuarios    = cargar_usuarios_vehiculos()
         vehiculos_pg = cargar_vehiculos()
@@ -204,7 +198,6 @@ def mostrar_parametros(
         else:
             st.info("No hay datos del sheet Santiago para hoy.")
 
-    # ── Configuración activa ──────────────────────────────────────────────────
     with st.expander("Configuración activa (conexiones)"):
         s = st.secrets
         filas_cfg = [

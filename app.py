@@ -10,13 +10,17 @@ TZ = ZoneInfo("America/Santiago")
 from connectors.sheets import cargar_datos, cargar_datos_regiones
 from connectors.mysql import cargar_recolecciones, cargar_usuarios_vehiculos
 from connectors.postgres import cargar_vehiculos
-from components.recolecciones import resolver_recolecciones
-from components.dashboard import mostrar_dashboard, mostrar_cards_choferes, _preparar_datos_regiones
-from components.comparativa import _preparar_datos
-from components.rendimiento import mostrar_rendimiento
-from components.carrusel import mostrar_carrusel, mostrar_carrusel_zonas
-from components.tab_recolecciones import mostrar_tab_recolecciones
-from components.tab_parametros import mostrar_parametros
+from components.helpers.id_resolver import resolver_recolecciones
+from components.helpers.data_prep import _preparar_datos, _preparar_datos_regiones
+from components.widgets.layout import _css, _header
+from components.tabs.tab_global import mostrar_dashboard
+from components.tabs.tab_zonas import mostrar_cards_choferes
+from components.tabs.tab_rendimiento import mostrar_rendimiento
+from components.tabs.tab_carrusel import mostrar_carrusel
+from components.tabs.tab_carrusel_zonas import mostrar_carrusel_zonas
+from components.tabs.tab_recolecciones import mostrar_tab_recolecciones
+from components.tabs.tab_parametros import mostrar_parametros
+from components.tabs.tab_v2 import mostrar_tab_v2
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
@@ -77,18 +81,12 @@ setTimeout(function(){
 },300);
 </script>""", height=1)
 
-_, col_btn = st.columns([10, 1])
-with col_btn:
-    if st.button("↺ Actualizar", use_container_width=True, help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
-        st.cache_data.clear()
-        st.rerun()
-
-tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz, tab_params = st.tabs([
-    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas", "Parametros"
+tab_global, tab_stgo, tab_reg, tab_rec_tab, tab_rendimiento, tab_carrusel, tab_cz, tab_params, tab_v2, tab_global_v2, tab_reg_v2 = st.tabs([
+    "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento", "Carrusel", "Carrusel Zonas", "Parametros", "Santiago v2", "Global v2", "Regiones v2"
 ])
 
 with tab_global:
-    mostrar_dashboard(df_sheets, df_rec, key_prefix="global_", choferes_filter=choferes_todos, tab_nombre="Global", mostrar_donuts=True, mostrar_peores=False)
+    mostrar_dashboard(df_sheets, df_rec, choferes_filter=choferes_todos, key_prefix="global_", tab_nombre="Global")
 
 with tab_stgo:
     mostrar_cards_choferes(df_sheets, df_rec_stgo, choferes_filter=choferes_stgo, key_prefix="stgo_cards_", tab_nombre="Santiago")
@@ -98,16 +96,37 @@ with tab_reg:
     mostrar_cards_choferes(df_regiones, df_rec_reg, choferes_filter=choferes_reg, key_prefix="reg_cards_", tab_nombre="Regiones", data_comp_override=_data_comp_reg)
 
 with tab_rec_tab:
+    _css()
+    _header("Recolecciones")
     mostrar_tab_recolecciones(df_rec)
 
 with tab_rendimiento:
+    _css()
+    _header("Rendimiento")
     mostrar_rendimiento(df_rec)
 
 with tab_carrusel:
+    _css()
+    _header("Carrusel")
     mostrar_carrusel(df_rec, data_comp=data_comp_todos)
 
 with tab_cz:
+    _css()
+    _header("Carrusel Zonas")
     mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones, choferes_todos, choferes_stgo, choferes_reg)
 
 with tab_params:
+    _css()
+    _header("Parametros")
     mostrar_parametros(df_rec, df_sheets, df_regiones, choferes_stgo, choferes_reg)
+
+with tab_v2:
+    _dc_stgo_v2 = _preparar_datos(df_sheets, df_rec_stgo)
+    _dc_stgo_v2 = _dc_stgo_v2 if _dc_stgo_v2 is not None else pd.DataFrame()
+    mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo, data_comp=_dc_stgo_v2, tab_nombre="Santiago")
+
+with tab_global_v2:
+    mostrar_tab_v2(df_rec, choferes_filter=choferes_todos, data_comp=data_comp_todos, tab_nombre="Global")
+
+with tab_reg_v2:
+    mostrar_tab_v2(df_rec_reg, choferes_filter=choferes_reg, data_comp=_dc_reg, tab_nombre="Regiones")

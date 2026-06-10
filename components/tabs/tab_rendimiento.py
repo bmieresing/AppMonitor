@@ -9,7 +9,6 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         st.warning("Sin datos de recolecciones para hoy.")
         return
 
-    # Dropdown para excluir razones de fallo
     df_razones = cargar_razones()
     razones_excluidas = []
     if not df_razones.empty:
@@ -22,7 +21,6 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         )
         razones_excluidas = excluir
 
-    # Filtrar filas con razones excluidas
     df = df_rec.copy()
     if razones_excluidas and "Razon" in df.columns:
         df = df[~df["Razon"].isin(razones_excluidas)]
@@ -31,7 +29,6 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         st.warning("Sin datos suficientes.")
         return
 
-    # Calcular exitosas y fallidas por chofer
     def clasificar(row):
         if pd.notna(row.get("Razon")) and row.get("Litros", 0) == 0:
             return "Fallida"
@@ -39,7 +36,6 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     df["Resultado"] = df.apply(clasificar, axis=1)
 
-    # Colapsar a 1 visita por local: exitosa si algún producto tuvo litros
     if "idLocalSistema" in df.columns:
         df_vis = (
             df.groupby(["NombreChofer", "idLocalSistema"])
@@ -59,13 +55,11 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
     stats = stats.merge(total, on="NombreChofer")
     stats["Pct"] = (stats["N"] / stats["Total"] * 100).round(1)
 
-    # Orden por % exitosas descendente
     orden = (
         stats[stats["Resultado"] == "Exitosa"]
         .sort_values("Pct", ascending=True)["NombreChofer"]
         .tolist()
     )
-    # Choferes sin exitosas van al final
     todos = df_vis["NombreChofer"].unique().tolist()
     faltantes = [c for c in todos if c not in orden]
     orden = faltantes + orden
@@ -119,7 +113,6 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     st.altair_chart(chart, width='stretch')
 
-    # Tabla resumen
     st.divider()
     base = df_vis.groupby("NombreChofer").apply(lambda g: pd.Series({
         "N Exitosas":  int((g["Resultado"] == "Exitosa").sum()),
