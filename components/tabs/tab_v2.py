@@ -489,26 +489,31 @@ def mostrar_tab_v2(
 
     st.divider()
 
-    # Con flex-wrap, un card que cae solo a una fila nueva se estiraba a todo
-    # el ancho (p. ej. Los Lagos en Global v3). flex-grow: 0 en las columnas
-    # del grid: todas las cards quedan del MISMO ancho (su base de st.columns,
-    # o el min-width responsive si la base es menor); la que no cabe baja sola
-    # manteniendo el tamaño, como en una grilla de verdad.
     grid_key = f"{key_prefix}v2_cards_{tab_nombre}".replace(" ", "_")
-    st.markdown(f"""
-    <style>
-        .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
-        .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
-            flex-grow: 0 !important;
-        }}
-        /* Las columnas anidadas (mini métricas dentro de cada card) sí crecen
-           para repartirse el ancho del card como siempre */
-        .st-key-{grid_key} div[data-testid="stColumn"] div[data-testid="stColumn"],
-        .st-key-{grid_key} div[data-testid="column"] div[data-testid="column"] {{
-            flex-grow: 1 !important;
-        }}
-    </style>
-    """, unsafe_allow_html=True)
+
+    def _css_grid(cols_obj: int):
+        """Grid de cards en UNA sola fila flex (st.columns(n)): las cards
+        fluyen y envuelven de corrido, sin filas-chunk del servidor. Antes,
+        con filas de 6 y un ancho donde caben 5, el 6.º de CADA fila quedaba
+        huérfano en una línea intermedia. Ancho de card: 1/cols_obj del grid
+        en pantallas anchas, con piso responsive (min-width); flex-grow 0 →
+        todas las cards del mismo ancho, la última fila puede quedar corta."""
+        minw = 260 if emoji_lado else 170
+        st.markdown(f"""
+        <style>
+            .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+            .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+                flex-grow: 0 !important;
+                min-width: max({minw}px, calc(100% / {cols_obj} - 1rem)) !important;
+            }}
+            /* Las columnas anidadas (mini métricas, emoji|dona) quedan libres */
+            .st-key-{grid_key} div[data-testid="stColumn"] div[data-testid="stColumn"],
+            .st-key-{grid_key} div[data-testid="column"] div[data-testid="column"] {{
+                flex-grow: 1 !important;
+                min-width: 0 !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
 
     # Global v2 espeja al Global v1: cards de centros de acopio, no de choferes
     if "GLOBAL" in tab_nombre.upper():
@@ -520,16 +525,14 @@ def mostrar_tab_v2(
         if not centros:
             st.info("Sin datos de centros de acopio para hoy.")
             return
-        # Mismo criterio dinámico que las cards de choferes (Regiones/Santiago):
-        # con 11 centros da 5 por fila (5/5/1) en vez de 6 (5/1/5 al envolver)
+        # Mismo criterio dinámico que las cards de choferes
         n_c = len(centros)
-        cols_por_fila = 6 if n_c > 12 else 5 if n_c > 6 else 4
+        _css_grid(6 if n_c > 12 else 5 if n_c > 6 else 4)
         with st.container(key=grid_key):
-            for i in range(0, len(centros), cols_por_fila):
-                cols = st.columns(cols_por_fila)
-                for j, c in enumerate(centros[i : i + cols_por_fila]):
-                    with cols[j]:
-                        _card_centro(c)
+            cols = st.columns(n_c)
+            for col, c in zip(cols, centros):
+                with col:
+                    _card_centro(c)
         return
 
     if data_comp.empty or "Chofer" not in data_comp.columns:
@@ -539,11 +542,10 @@ def mostrar_tab_v2(
     choferes = _metricas_choferes(df_rec, df_locales, data_comp)
     # Mismo criterio dinámico que las cards v1: menos columnas si hay pocos choferes
     n = len(choferes)
-    COLS = 6 if n > 12 else 5 if n > 6 else 4
+    _css_grid(6 if n > 12 else 5 if n > 6 else 4)
     nav_param = "nav_carrusel_v3" if emoji_lado else "nav_carrusel_v2"
     with st.container(key=grid_key):
-        for i in range(0, n, COLS):
-            cols = st.columns(COLS)
-            for j, ch in enumerate(choferes[i : i + COLS]):
-                with cols[j]:
-                    _card_chofer(ch, compact=compact, nav_param=nav_param)
+        cols = st.columns(n)
+        for col, ch in zip(cols, choferes):
+            with col:
+                _card_chofer(ch, compact=compact, nav_param=nav_param)
