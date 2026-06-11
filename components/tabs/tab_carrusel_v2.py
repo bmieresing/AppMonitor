@@ -239,24 +239,39 @@ def mostrar_carrusel_v2(
                 _mini_metrica(mcols[_col], "🚨", "Emergencias", d["pct_emerg"],
                               d["sub_emerg"], grande=True)
 
-    col_iz, col_der = st.columns([2, 3])
+    # Responsive como el Carrusel v1: cada bloque (dona, tablas top, productos)
+    # tiene un ancho mínimo legible y salta de fila cuando no cabe, en vez de
+    # comprimir las tablas hasta truncarlas. Aplica también a las columnas
+    # anidadas (tops | productos dentro de la derecha), pisando el min-width:0
+    # global de _css_responsive.
+    st.markdown(f"""
+    <style>
+        .st-key-{ns}_cuerpo div[data-testid="stHorizontalBlock"] {{ flex-wrap: wrap; }}
+        .st-key-{ns}_cuerpo div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+        .st-key-{ns}_cuerpo div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+            min-width: 280px !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+    with st.container(key=f"{ns}_cuerpo"):
+        col_iz, col_der = st.columns([2, 3])
 
-    with col_iz:
-        with st.container(border=True):
-            st.plotly_chart(
-                _donut_desglose(d["exitosas"], d["pend_alta"], d["pend_normal"], d["razon_counts"]),
-                width='stretch', config=_CFG, key=f"{ns}_donut",
-            )
-        # Mismas 4 cajas de colores del Carrusel v1 (widget compartido)
-        _mini_kpis(d["exitosas"], d["fallidas"], d["pend_alta"], d["pend_normal"])
+        with col_iz:
+            with st.container(border=True):
+                st.plotly_chart(
+                    _donut_desglose(d["exitosas"], d["pend_alta"], d["pend_normal"], d["razon_counts"]),
+                    width='stretch', config=_CFG, key=f"{ns}_donut",
+                )
+            # Mismas 4 cajas de colores del Carrusel v1 (widget compartido)
+            _mini_kpis(d["exitosas"], d["fallidas"], d["pend_alta"], d["pend_normal"])
 
-    with col_der:
-        c_tops, c_prod = st.columns([1, 1])
-        with c_tops:
-            with st.container(border=True):
-                _tabla_top(d["lit_local"], "🏆 Top 5 — Más litros", ascendente=False)
-            with st.container(border=True):
-                _tabla_top(d["lit_local"], "⚠️ Top 5 — Menos litros", ascendente=True)
-        with c_prod:
-            with st.container(border=True):
-                _tabla_productos(d["productos"])
+        with col_der:
+            c_tops, c_prod = st.columns([1, 1])
+            with c_tops:
+                with st.container(border=True):
+                    _tabla_top(d["lit_local"], "🏆 Top 5 — Más litros", ascendente=False)
+                with st.container(border=True):
+                    _tabla_top(d["lit_local"], "⚠️ Top 5 — Menos litros", ascendente=True)
+            with c_prod:
+                with st.container(border=True):
+                    _tabla_productos(d["productos"])
