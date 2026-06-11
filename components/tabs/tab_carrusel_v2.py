@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-from components.helpers.carrusel_data import datos_chofer
+from components.helpers.carrusel_data import datos_chofer, lista_choferes
 from components.helpers.data_prep import _cerrados_set
 from components.tabs.tab_carrusel import _mini_kpis
 from components.tabs.tab_v2 import _mini_metrica, _css_responsive
@@ -116,17 +116,16 @@ def mostrar_carrusel_v2(
     """keys_ns: namespace de las keys de session_state/widgets — permite montar
     el mismo carrusel en más de una vista (v2, v3) con estado independiente."""
     ns = keys_ns
-    if df_rec.empty or "NombreChofer" not in df_rec.columns:
+    # Incluye también a los choferes del sheet que aún no suben recolecciones
+    choferes = lista_choferes(df_rec, data_comp)
+    if not choferes:
         st.warning("Sin datos de recolecciones para hoy.")
         return
 
     # CSS base v2: columnas con wrap + fix de hover de Plotly
     _css_responsive()
 
-    choferes = sorted(df_rec["NombreChofer"].dropna().unique().tolist())
     n = len(choferes)
-    if n == 0:
-        return
 
     for key, val in [(f"{ns}_idx", 0), (f"{ns}_tick_prev", 0)]:
         if key not in st.session_state:

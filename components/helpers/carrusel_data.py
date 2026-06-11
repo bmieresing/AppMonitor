@@ -3,16 +3,32 @@
 import pandas as pd
 
 from connectors.mysql import cargar_estado_locales
-from connectors.postgres import cargar_razones
-from components.helpers.data_prep import _litros, _pct
+from connectors.postgres import cargar_razones, cargar_empleados
+from components.helpers.data_prep import _litros, _pct, _norm_key
 from components.helpers.kpis import exitosas_fallidas, RAZON_NO_ALC
+
+
+def lista_choferes(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None) -> list[str]:
+    """Choferes a mostrar en el carrusel: los que tienen recolecciones hoy
+    UNIDOS a los de la comparativa (sheet) — así un chofer con match pero
+    que aún no sube nada también aparece (en cero)."""
+    ch = (
+        set(df_rec["NombreChofer"].dropna())
+        if not df_rec.empty and "NombreChofer" in df_rec.columns else set()
+    )
+    if data_comp is not None and not data_comp.empty and "Chofer" in data_comp.columns:
+        ch |= set(data_comp["Chofer"].dropna())
+    return sorted(ch)
 
 
 def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | None = None) -> dict:
     """Todas las métricas del carrusel para un chofer:
     tanques (litros/locales/alta con no-alc), donut de desglose, mini KPIs,
     litros por local (tops 5) y desglose por producto."""
-    df_c = df_rec[df_rec["NombreChofer"] == chofer].copy()
+    df_c = (
+        df_rec[df_rec["NombreChofer"] == chofer].copy()
+        if not df_rec.empty and "NombreChofer" in df_rec.columns else pd.DataFrame()
+    )
     id_col = "idLocalSistema" if "idLocalSistema" in df_c.columns else None
     if id_col and "idProducto" in df_c.columns:
         df_c = df_c.drop_duplicates(subset=[id_col, "idProducto"])
@@ -22,8 +38,18 @@ def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | No
 
     df_locales_all = cargar_estado_locales()
     chofer_id = df_c["Chofer"].iloc[0] if not df_c.empty and "Chofer" in df_c.columns else None
+    if chofer_id is None:
+        # Chofer sin recolecciones hoy: resolver su ID por nombre normalizado
+        # para igual mostrar sus locales pendientes
+        emp = cargar_empleados()
+        if not emp.empty:
+            mapa_ids = dict(zip(_norm_key(emp["nombre"]), emp["id"]))
+            chofer_id = mapa_ids.get(_norm_key(pd.Series([chofer])).iloc[0])
     if chofer_id is not None and not df_locales_all.empty and "Chofer" in df_locales_all.columns:
         df_loc_ch = df_locales_all[df_locales_all["Chofer"] == chofer_id]
+        if df_loc_ch.empty:
+            # Fallback por tipo: MySQL puede entregar el ID como texto y PG como int
+            df_loc_ch = df_locales_all[df_locales_all["Chofer"].astype(str) == str(chofer_id)]
     else:
         df_loc_ch = pd.DataFrame()
 

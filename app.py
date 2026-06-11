@@ -5,6 +5,7 @@ from streamlit_autorefresh import st_autorefresh
 from connectors.sheets import cargar_datos, cargar_datos_regiones
 from connectors.mysql import cargar_recolecciones, cargar_usuarios_vehiculos
 from connectors.postgres import cargar_vehiculos
+from components.helpers.carrusel_data import lista_choferes
 from components.helpers.id_resolver import resolver_recolecciones
 from components.helpers.data_prep import _preparar_datos, _preparar_datos_regiones
 from components.widgets.layout import _css, _header
@@ -73,7 +74,8 @@ _nav_v1 = st.query_params.get("nav_carrusel", "")
 _nav_v2 = st.query_params.get("nav_carrusel_v2", "")
 _nav_v3 = st.query_params.get("nav_carrusel_v3", "")
 if _nav_v1 or _nav_v2 or _nav_v3:
-    _ch_sorted = sorted(df_rec["NombreChofer"].dropna().unique().tolist()) if not df_rec.empty and "NombreChofer" in df_rec.columns else []
+    # Misma lista que usan los carruseles (incluye choferes del sheet sin recolecciones)
+    _ch_sorted = lista_choferes(df_rec, data_comp_todos)
     _target = _nav_v3 or _nav_v2 or _nav_v1
     if _nav_v3:
         if _target in _ch_sorted:

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from streamlit_autorefresh import st_autorefresh
-from components.helpers.carrusel_data import datos_chofer
+from components.helpers.carrusel_data import datos_chofer, lista_choferes
 from components.helpers.data_prep import _cerrados_set
 from config import INTERVALO_CARRUSEL_SEG
 
@@ -143,13 +143,11 @@ def _productos(prod: pd.DataFrame):
 
 @st.fragment
 def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None):
-    if df_rec.empty or "NombreChofer" not in df_rec.columns:
-        st.warning("Sin datos de recolecciones para hoy.")
-        return
-
-    choferes = sorted(df_rec["NombreChofer"].dropna().unique().tolist())
+    # Incluye también a los choferes del sheet que aún no suben recolecciones
+    choferes = lista_choferes(df_rec, data_comp)
     n = len(choferes)
     if n == 0:
+        st.warning("Sin datos de recolecciones para hoy.")
         return
 
     for key, val in [("carrusel_idx", 0), ("carrusel_tick_prev", 0)]:
