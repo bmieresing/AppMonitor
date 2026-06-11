@@ -7,7 +7,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from connectors.mysql import cargar_estado_locales
-from components.helpers.data_prep import _pct, _mapa_empleados, _cerrados_set, _datos_centros
+from components.helpers.data_prep import (
+    _pct, _mapa_empleados, _cerrados_set, _datos_centros, _norm_key, _norm_nombre,
+)
 from components.helpers.kpis import calcular_kpis
 from config import UMBRAL_VERDE, UMBRAL_AMARILLO
 
@@ -19,12 +21,15 @@ def _color_pct(pct: int) -> str:
 
 
 def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp: pd.DataFrame) -> list[dict]:
-    mapa    = _mapa_empleados()
-    cerrados = _cerrados_set(df_rec)
+    # Todos los cruces por nombre usan la clave normalizada (_norm_key): el
+    # nombre del sheet puede diferir del de PostgreSQL en mayúsculas/tildes
+    mapa = _mapa_empleados()
+    cerrados_norm = {_norm_nombre(c) for c in _cerrados_set(df_rec)}
 
     df_loc = df_locales.copy() if not df_locales.empty else pd.DataFrame()
     if not df_loc.empty and "Chofer" in df_loc.columns:
         df_loc["NombreChofer"] = pd.to_numeric(df_loc["Chofer"], errors="coerce").map(mapa).fillna(df_loc["Chofer"].astype(str))
+        df_loc["_key"] = _norm_key(df_loc["NombreChofer"].astype(str))
         df_loc["EsAlta"] = (
             df_loc["Prioridad"].astype(str).str.upper().str.startswith("ALTA")
             if "Prioridad" in df_loc.columns else False
@@ -37,11 +42,12 @@ def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp
         df_na = df_rec[df_rec["Razon"] == 11].drop_duplicates(subset=cols_dd).copy()
         if not df_na.empty:
             df_na["NombreChofer"] = pd.to_numeric(df_na["Chofer"], errors="coerce").map(mapa).fillna(df_na["Chofer"].astype(str))
-            no_alc_ch = df_na.groupby("NombreChofer").size().to_dict()
+            df_na["_key"] = _norm_key(df_na["NombreChofer"].astype(str))
+            no_alc_ch = df_na.groupby("_key").size().to_dict()
             if not df_loc.empty and "ID_Local" in df_loc.columns and "idLocalSistema" in df_na.columns:
                 alta_ids = set(df_loc[df_loc["EsAlta"]]["ID_Local"].astype(int))
                 df_na_alta = df_na[df_na["idLocalSistema"].dropna().astype(int).isin(alta_ids)]
-                no_alc_alta_ch = df_na_alta.groupby("NombreChofer").size().to_dict()
+                no_alc_alta_ch = df_na_alta.groupby("_key").size().to_dict()
 
     rows = []
     for _, fila in data_comp.sort_values("Pct", ascending=False).iterrows():
@@ -50,15 +56,16 @@ def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp
         prom       = float(fila.get("Prom", 0))
         pct_lit    = _pct(litros_hoy, prom)
 
+        key = _norm_nombre(str(nombre))
         pct_loc = pct_alta = no_alc_pct_loc = no_alc_pct_alta = 0
         sub_loc = sub_alta = None
 
-        if not df_loc.empty and "NombreChofer" in df_loc.columns:
-            grp = df_loc[df_loc["NombreChofer"] == nombre]
+        if not df_loc.empty and "_key" in df_loc.columns:
+            grp = df_loc[df_loc["_key"] == key]
             if not grp.empty:
                 t = len(grp)
                 r = int((grp["Estado"] == "Realizado").sum())
-                na = no_alc_ch.get(nombre, 0)
+                na = no_alc_ch.get(key, 0)
                 r_exit = max(0, r - na)
                 pct_loc = _pct(r_exit, t)
                 no_alc_pct_loc = _pct(na, t)
@@ -68,7 +75,7 @@ def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp
                 if not grp_alta.empty:
                     t_a = len(grp_alta)
                     r_a = int((grp_alta["Estado"] == "Realizado").sum())
-                    na_a = no_alc_alta_ch.get(nombre, 0)
+                    na_a = no_alc_alta_ch.get(key, 0)
                     r_a_exit = max(0, r_a - na_a)
                     pct_alta = _pct(r_a_exit, t_a)
                     no_alc_pct_alta = _pct(na_a, t_a)
@@ -80,7 +87,7 @@ def _metricas_choferes(df_rec: pd.DataFrame, df_locales: pd.DataFrame, data_comp
         rows.append(dict(
             nombre=nombre,
             ruta=ruta,
-            cerrado=nombre in cerrados,
+            cerrado=key in cerrados_norm,
             litros_hoy=litros_hoy, prom=prom, pct_lit=pct_lit,
             pct_loc=pct_loc, sub_loc=sub_loc, no_alc_pct_loc=no_alc_pct_loc,
             pct_alta=pct_alta, sub_alta=sub_alta, no_alc_pct_alta=no_alc_pct_alta,

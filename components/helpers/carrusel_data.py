@@ -4,21 +4,24 @@ import pandas as pd
 
 from connectors.mysql import cargar_estado_locales
 from connectors.postgres import cargar_razones, cargar_empleados
-from components.helpers.data_prep import _litros, _pct, _norm_key
+from components.helpers.data_prep import _litros, _pct, _norm_key, _norm_nombre
 from components.helpers.kpis import exitosas_fallidas, RAZON_NO_ALC
 
 
 def lista_choferes(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None) -> list[str]:
     """Choferes a mostrar en el carrusel: los que tienen recolecciones hoy
     UNIDOS a los de la comparativa (sheet) — así un chofer con match pero
-    que aún no sube nada también aparece (en cero)."""
-    ch = (
-        set(df_rec["NombreChofer"].dropna())
-        if not df_rec.empty and "NombreChofer" in df_rec.columns else set()
-    )
+    que aún no sube nada también aparece (en cero). Deduplica por nombre
+    normalizado, prefiriendo la escritura de las recolecciones (PostgreSQL)
+    sobre la del sheet."""
+    nombres: dict[str, str] = {}
     if data_comp is not None and not data_comp.empty and "Chofer" in data_comp.columns:
-        ch |= set(data_comp["Chofer"].dropna())
-    return sorted(ch)
+        for n in data_comp["Chofer"].dropna():
+            nombres[_norm_nombre(n)] = str(n)
+    if not df_rec.empty and "NombreChofer" in df_rec.columns:
+        for n in df_rec["NombreChofer"].dropna():
+            nombres[_norm_nombre(n)] = str(n)
+    return sorted(nombres.values())
 
 
 def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | None = None) -> dict:
@@ -82,7 +85,9 @@ def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | No
     sub_lit = f"{litros_tot:,} L"
     ruta = None
     if data_comp is not None and not data_comp.empty and "Chofer" in data_comp.columns:
-        fila = data_comp[data_comp["Chofer"] == chofer]
+        # Match por nombre normalizado: el sheet puede escribir el nombre
+        # distinto (mayúsculas/tildes) al de PostgreSQL
+        fila = data_comp[_norm_key(data_comp["Chofer"].astype(str)) == _norm_nombre(chofer)]
         if not fila.empty:
             _lh = float(fila.iloc[0].get("LitrosHoy", litros_tot))
             _pr = float(fila.iloc[0].get("Prom", 0))

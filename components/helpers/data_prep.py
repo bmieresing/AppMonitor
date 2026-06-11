@@ -24,6 +24,11 @@ def _norm_key(s: pd.Series) -> pd.Series:
     )
 
 
+def _norm_nombre(s) -> str:
+    """Versión escalar de _norm_key — clave de match para un solo nombre."""
+    return _norm_key(pd.Series([str(s)])).iloc[0]
+
+
 def _pct(r, t) -> int:
     return int(r / t * 100) if t > 0 else 0
 

@@ -1,7 +1,9 @@
 import urllib.parse
 import streamlit as st
 import pandas as pd
-from components.helpers.data_prep import _mapa_empleados, _cerrados_set, _datos_centros, _pct
+from components.helpers.data_prep import (
+    _mapa_empleados, _cerrados_set, _datos_centros, _pct, _norm_key, _norm_nombre,
+)
 from components.widgets.tanque import _tanque, C_VERDE_OSC
 
 
@@ -18,15 +20,18 @@ def _cards_choferes_tanque(
 
     mapa_nombre = _mapa_empleados()
 
+    # Todos los cruces por nombre usan la clave normalizada (_norm_key): el
+    # nombre del sheet puede diferir del de PostgreSQL en mayúsculas/tildes
     df_loc = df_locales.copy() if not df_locales.empty else pd.DataFrame()
     if not df_loc.empty and "Chofer" in df_loc.columns:
         df_loc["NombreChofer"] = pd.to_numeric(df_loc["Chofer"], errors="coerce").map(mapa_nombre).fillna(df_loc["Chofer"].astype(str))
+        df_loc["_key"] = _norm_key(df_loc["NombreChofer"].astype(str))
         df_loc["EsAlta"] = (
             df_loc["Prioridad"].astype(str).str.upper().str.startswith("ALTA")
             if "Prioridad" in df_loc.columns else False
         )
 
-    cerrados = _cerrados_set(df_rec)
+    cerrados_norm = {_norm_nombre(c) for c in _cerrados_set(df_rec)}
 
     no_alc_ch: dict[str, int] = {}
     no_alc_alta_ch: dict[str, int] = {}
@@ -35,11 +40,12 @@ def _cards_choferes_tanque(
         _df_na = df_rec[df_rec["Razon"] == 11].drop_duplicates(subset=_cols_dd).copy()
         if not _df_na.empty:
             _df_na["NombreChofer"] = pd.to_numeric(_df_na["Chofer"], errors="coerce").map(mapa_nombre).fillna(_df_na["Chofer"].astype(str))
-            no_alc_ch = _df_na.groupby("NombreChofer").size().to_dict()
+            _df_na["_key"] = _norm_key(_df_na["NombreChofer"].astype(str))
+            no_alc_ch = _df_na.groupby("_key").size().to_dict()
             if not df_loc.empty and "ID_Local" in df_loc.columns and "idLocalSistema" in _df_na.columns:
                 _alta_ids = set(df_loc[df_loc["EsAlta"]]["ID_Local"].astype(int).tolist())
                 _df_na_alta = _df_na[_df_na["idLocalSistema"].dropna().astype(int).isin(_alta_ids)]
-                no_alc_alta_ch = _df_na_alta.groupby("NombreChofer").size().to_dict()
+                no_alc_alta_ch = _df_na_alta.groupby("_key").size().to_dict()
 
     data_sorted = data_comp.sort_values("Pct", ascending=False).reset_index(drop=True)
 
@@ -50,14 +56,15 @@ def _cards_choferes_tanque(
         prom = float(fila.get("Prom", 0))
         pct_lit = _pct(litros_hoy, prom)
 
+        key = _norm_nombre(str(nombre))
         pct_loc = pct_alta = no_alc_pct_loc = no_alc_pct_alta = 0
         sub_loc = sub_alta = "—"
-        if not df_loc.empty and "NombreChofer" in df_loc.columns:
-            grp = df_loc[df_loc["NombreChofer"] == nombre]
+        if not df_loc.empty and "_key" in df_loc.columns:
+            grp = df_loc[df_loc["_key"] == key]
             if not grp.empty:
                 t_tot = len(grp)
                 r_tot = int((grp["Estado"] == "Realizado").sum())
-                no_alc = no_alc_ch.get(nombre, 0)
+                no_alc = no_alc_ch.get(key, 0)
                 r_exitosos = max(0, r_tot - no_alc)
                 pct_loc = _pct(r_exitosos, t_tot)
                 no_alc_pct_loc = _pct(no_alc, t_tot)
@@ -66,13 +73,13 @@ def _cards_choferes_tanque(
                 if not grp_alta.empty:
                     t_alt = len(grp_alta)
                     r_alt = int((grp_alta["Estado"] == "Realizado").sum())
-                    no_alc_alt = no_alc_alta_ch.get(nombre, 0)
+                    no_alc_alt = no_alc_alta_ch.get(key, 0)
                     r_alt_exit = max(0, r_alt - no_alc_alt)
                     pct_alta = _pct(r_alt_exit, t_alt)
                     no_alc_pct_alta = _pct(no_alc_alt, t_alt)
                     sub_alta = f"{r_alt_exit}/{t_alt}"
 
-        cerrado = nombre in cerrados
+        cerrado = key in cerrados_norm
         candado = "🔒 " if cerrado else ""
         bg = "#f0f4f0" if cerrado else "#f9fdf9"
         sub_lit = f"{int(litros_hoy):,} / {int(prom):,} L"
