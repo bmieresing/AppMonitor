@@ -1,8 +1,44 @@
+import functools
+
 import streamlit as st
 import gspread
 import pandas as pd
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
+
+from config import TTL_DATOS_SEG
+from connectors.estado_carga import (
+    registrar_carga, registrar_falla, ciclo_ok, intento_fallido,
+)
+
+# Versión de cada hoja en el último ciclo confirmado (mismo esquema
+# todo-o-nada que connectors/mysql.py)
+_ultimo_ok: dict[str, pd.DataFrame] = {}
+
+
+def _con_respaldo(hoja: str):
+    """Mismo commit todo-o-nada que connectors/mysql.py: con falla propia o
+    ciclo sin confirmar, sirve la versión del último ciclo confirmado; con el
+    ciclo confirmado, sirve lo nuevo y lo guarda. (gspread lanza excepciones
+    variadas → se atrapa Exception.)"""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            # Fail-fast: si el intento de ciclo ya falló (p. ej. MySQL caído),
+            # ni consultar el sheet — son las cargas más lentas del ciclo
+            if intento_fallido():
+                return _ultimo_ok.get(hoja, pd.DataFrame()).copy()
+            try:
+                df = fn(*args, **kwargs)
+            except Exception:
+                return _ultimo_ok.get(hoja, pd.DataFrame()).copy()
+            if ciclo_ok():
+                _ultimo_ok[hoja] = df.copy()
+                return df
+            return _ultimo_ok.get(hoja, df).copy()
+        return wrapper
+    return deco
+
 
 def _hoy() -> date:
     return datetime.now(ZoneInfo("America/Santiago")).date()
@@ -19,7 +55,8 @@ def _letra_col(i: int) -> str:
         letras = chr(65 + r) + letras
     return letras
 
-@st.cache_data(ttl=300)
+@_con_respaldo("Seguimiento diario")
+@st.cache_data(ttl=TTL_DATOS_SEG)
 def cargar_datos() -> pd.DataFrame:
     try:
         gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
@@ -27,8 +64,9 @@ def cargar_datos() -> pd.DataFrame:
         hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(cfg["sheet_name"])
         filas = hoja.get(cfg.get("sheet_range", "A:Z"))
     except Exception as e:
-        st.error(f"Sin conexión a Google Sheets (Santiago): {e}")
-        return pd.DataFrame()
+        registrar_falla("Sheets", "Seguimiento diario", e)
+        raise  # atraviesa st.cache_data: el fracaso no queda cacheado
+    registrar_carga("Sheets", "Seguimiento diario", max(len(filas) - 1, 0))
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
@@ -83,7 +121,8 @@ def mapear_zona(tripulacion: str) -> str | None:
     return None
 
 
-@st.cache_data(ttl=300)
+@_con_respaldo("Control Regiones")
+@st.cache_data(ttl=TTL_DATOS_SEG)
 def cargar_datos_regiones() -> pd.DataFrame:
     try:
         gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
@@ -94,8 +133,9 @@ def cargar_datos_regiones() -> pd.DataFrame:
         # A:I para incluir la columna RUTA (col I)
         filas = hoja.get("A:I")
     except Exception as e:
-        st.error(f"Sin conexión a Google Sheets (Regiones): {e}")
-        return pd.DataFrame()
+        registrar_falla("Sheets", "Control Regiones", e)
+        raise  # atraviesa st.cache_data: el fracaso no queda cacheado
+    registrar_carga("Sheets", "Control Regiones", max(len(filas) - 1, 0))
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])

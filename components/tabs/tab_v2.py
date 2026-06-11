@@ -7,8 +7,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from connectors.mysql import cargar_estado_locales
+from connectors.estado_carga import falla_reciente, detalle_falla, forzar_ciclo
 from components.helpers.data_prep import (
     _pct, _mapa_empleados, _cerrados_set, _datos_centros, _norm_key, _norm_nombre,
+    hora_actualizacion,
 )
 from components.helpers.kpis import calcular_kpis
 from config import UMBRAL_VERDE, UMBRAL_AMARILLO
@@ -322,7 +324,7 @@ def mostrar_tab_v2(
     if not df_locales.empty:
         df_locales = df_locales[df_locales["Chofer"].isin(choferes_filter)]
 
-    ahora = datetime.now(TZ)
+    ahora = hora_actualizacion()
     titulo = f"Dashboard Operacional – Recolección de Aceite | {tab_nombre}"
     # Botón ↺ chico pegado a la fecha de actualización
     bkey = f"{key_prefix}v2_btn_{tab_nombre}".replace(" ", "_")
@@ -342,30 +344,28 @@ def mostrar_tab_v2(
         help="Widgets y letras reducidos para que quepa más en pantalla",
     )
 
-    if emoji_lado:
-        # v3: fecha + ↺ arriba del título; el toggle Compacto al lado del título
-        with st.container(horizontal=True, vertical_alignment="center", key=bkey):
-            st.caption(f"Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}")
-            if st.button("↺", key=f"{key_prefix}v2_refresh_{tab_nombre}",
-                         help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
-                st.cache_data.clear()
-                st.rerun()
-        with st.container(horizontal=True, vertical_alignment="center"):
-            st.subheader(titulo)
-            compact = st.toggle("Compacto", **_toggle_kwargs)
-    else:
-        col_titulo, col_toggle = st.columns([10, 1.5])
-        with col_titulo:
-            st.subheader(titulo)
-            # Container horizontal (flex): cada elemento ocupa solo su ancho real,
-            # así el botón queda pegado a la fecha sin columnas de por medio
-            with st.container(horizontal=True, vertical_alignment="center", key=bkey):
-                st.caption(f"Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}")
+    # Encabezado v2/v3: título a la izquierda; fecha + ↺ + Compacto comparten fila.
+    # Container horizontal (flex): cada elemento ocupa solo su ancho real,
+    # así el botón queda pegado a la fecha sin columnas de por medio.
+    col_titulo, col_der = st.columns([7, 4], vertical_alignment="center")
+    with col_titulo:
+        st.subheader(titulo)
+    with col_der:
+        with st.container(horizontal=True, vertical_alignment="center",
+                          horizontal_alignment="right", key=bkey):
+            # Sub-container sin gap: el ↺ queda pegado a la fecha; el gap normal
+            # del container exterior separa este bloque del toggle Compacto
+            with st.container(horizontal=True, vertical_alignment="center",
+                              gap=None, width="content"):
+                _falla = falla_reciente()
+                _txt = f"Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}"
+                if _falla:
+                    _txt += f" · :red[⚠ falla {_falla.strftime('%H:%M')}]"
+                st.caption(_txt, help=detalle_falla() if _falla else None)
                 if st.button("↺", key=f"{key_prefix}v2_refresh_{tab_nombre}",
                              help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
-                    st.cache_data.clear()
+                    forzar_ciclo()  # el próximo run ejecuta un ciclo completo
                     st.rerun()
-        with col_toggle:
             # Modo compacto (espeja el compacto de _donuts_global v1). Activado por
             # defecto en Regiones; quien necesite ver más grande lo apaga acá
             compact = st.toggle("Compacto", **_toggle_kwargs)
@@ -489,6 +489,27 @@ def mostrar_tab_v2(
 
     st.divider()
 
+    # Con flex-wrap, un card que cae solo a una fila nueva se estiraba a todo
+    # el ancho (p. ej. Los Lagos en Global v3). flex-grow: 0 en las columnas
+    # del grid: todas las cards quedan del MISMO ancho (su base de st.columns,
+    # o el min-width responsive si la base es menor); la que no cabe baja sola
+    # manteniendo el tamaño, como en una grilla de verdad.
+    grid_key = f"{key_prefix}v2_cards_{tab_nombre}".replace(" ", "_")
+    st.markdown(f"""
+    <style>
+        .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+        .st-key-{grid_key} div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {{
+            flex-grow: 0 !important;
+        }}
+        /* Las columnas anidadas (mini métricas dentro de cada card) sí crecen
+           para repartirse el ancho del card como siempre */
+        .st-key-{grid_key} div[data-testid="stColumn"] div[data-testid="stColumn"],
+        .st-key-{grid_key} div[data-testid="column"] div[data-testid="column"] {{
+            flex-grow: 1 !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
     # Global v2 espeja al Global v1: cards de centros de acopio, no de choferes
     if "GLOBAL" in tab_nombre.upper():
         centros = _datos_centros(
@@ -499,12 +520,16 @@ def mostrar_tab_v2(
         if not centros:
             st.info("Sin datos de centros de acopio para hoy.")
             return
-        cols_por_fila = max(3, -(-len(centros) // 2))
-        for i in range(0, len(centros), cols_por_fila):
-            cols = st.columns(cols_por_fila)
-            for j, c in enumerate(centros[i : i + cols_por_fila]):
-                with cols[j]:
-                    _card_centro(c)
+        # Mismo criterio dinámico que las cards de choferes (Regiones/Santiago):
+        # con 11 centros da 5 por fila (5/5/1) en vez de 6 (5/1/5 al envolver)
+        n_c = len(centros)
+        cols_por_fila = 6 if n_c > 12 else 5 if n_c > 6 else 4
+        with st.container(key=grid_key):
+            for i in range(0, len(centros), cols_por_fila):
+                cols = st.columns(cols_por_fila)
+                for j, c in enumerate(centros[i : i + cols_por_fila]):
+                    with cols[j]:
+                        _card_centro(c)
         return
 
     if data_comp.empty or "Chofer" not in data_comp.columns:
@@ -516,8 +541,9 @@ def mostrar_tab_v2(
     n = len(choferes)
     COLS = 6 if n > 12 else 5 if n > 6 else 4
     nav_param = "nav_carrusel_v3" if emoji_lado else "nav_carrusel_v2"
-    for i in range(0, n, COLS):
-        cols = st.columns(COLS)
-        for j, ch in enumerate(choferes[i : i + COLS]):
-            with cols[j]:
-                _card_chofer(ch, compact=compact, nav_param=nav_param)
+    with st.container(key=grid_key):
+        for i in range(0, n, COLS):
+            cols = st.columns(COLS)
+            for j, ch in enumerate(choferes[i : i + COLS]):
+                with cols[j]:
+                    _card_chofer(ch, compact=compact, nav_param=nav_param)

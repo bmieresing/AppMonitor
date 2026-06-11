@@ -1,7 +1,10 @@
+import html
 import streamlit as st
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from components.helpers.data_prep import hora_actualizacion
 from components.widgets.tanque import C_VERDE_OSC
+from connectors.estado_carga import falla_reciente, detalle_falla, forzar_ciclo
 
 TZ = ZoneInfo("America/Santiago")
 
@@ -35,7 +38,7 @@ def _css():
 def _header(tab_nombre: str = "", key_prefix: str = ""):
     """Banner verde como container nativo (clase .st-key-*): el botón ↺ vive
     dentro del banner, en el lugar que ocupaba el badge EN VIVO."""
-    ahora = datetime.now(TZ)
+    ahora = hora_actualizacion()
     badge = (f'<span style="background:rgba(255,255,255,0.18);padding:3px 14px;'
              f'border-radius:12px;font-size:18px;font-weight:700;letter-spacing:2px;'
              f'margin-left:16px">{tab_nombre.upper()}</span>') if tab_nombre else ""
@@ -71,15 +74,24 @@ def _header(tab_nombre: str = "", key_prefix: str = ""):
                 unsafe_allow_html=True,
             )
         with c_ts:
+            # Si hubo una falla de carga en el ciclo vigente, hora en rojo claro
+            # al lado de la fecha (legible sobre el banner verde); el detalle
+            # queda en el tooltip (title)
+            falla = falla_reciente()
+            falla_html = (
+                f' <span style="color:#ff8a80;font-weight:700" '
+                f'title="{html.escape(detalle_falla())}">⚠ falla {falla.strftime("%H:%M")}</span>'
+            ) if falla else ""
             st.markdown(
                 f'<div style="text-align:right;font-size:12px;color:rgba(255,255,255,0.85);'
-                f'line-height:1.4">Última actualización<br>{ahora.strftime("%d/%m/%Y %H:%M")}</div>',
+                f'line-height:1.4">Última actualización<br>'
+                f'{ahora.strftime("%d/%m/%Y %H:%M")}{falla_html}</div>',
                 unsafe_allow_html=True,
             )
         with c_btn:
             if st.button("↺",
                          key=f"hdr_refresh_{key_prefix}{tab_nombre or 'main'}",
                          help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
-                st.cache_data.clear()
+                forzar_ciclo()  # el próximo run ejecuta un ciclo completo
                 st.rerun()
     st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)

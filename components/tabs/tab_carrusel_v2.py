@@ -7,7 +7,8 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
 from components.helpers.carrusel_data import datos_chofer, lista_choferes
-from components.helpers.data_prep import _cerrados_set
+from components.helpers.data_prep import _cerrados_set, hora_actualizacion
+from connectors.estado_carga import falla_reciente, detalle_falla, forzar_ciclo
 from components.tabs.tab_carrusel import _mini_kpis
 from components.tabs.tab_v2 import _mini_metrica, _css_responsive
 from components.widgets.tanque import C_VERDE_OSC
@@ -131,6 +132,32 @@ def mostrar_carrusel_v2(
         if key not in st.session_state:
             st.session_state[key] = val
 
+    # Fecha de actualización + botón ↺ chico, arriba del selector de choferes
+    ahora = hora_actualizacion()
+    st.markdown(f"""
+    <style>
+        .st-key-{ns}_fecha button {{
+            min-height: 24px !important;
+            height: 24px !important;
+            padding: 0 8px !important;
+            font-size: 13px !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+    # gap=None: el botón ↺ queda pegado a la fecha
+    with st.container(horizontal=True, vertical_alignment="center",
+                      gap=None, key=f"{ns}_fecha"):
+        _falla = falla_reciente()
+        _txt = f"Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}"
+        if _falla:
+            _txt += f" · :red[⚠ falla {_falla.strftime('%H:%M')}]"
+        st.caption(_txt, help=detalle_falla() if _falla else None)
+        if st.button("↺", key=f"{ns}_refresh",
+                     help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
+            forzar_ciclo()  # el próximo run ejecuta un ciclo completo
+            # scope="app": el carrusel es un fragment; el ciclo corre en app.py
+            st.rerun(scope="app")
+
     c_slicer, c_toggle = st.columns([8, 1])
     with c_toggle:
         auto = st.toggle("Auto", value=False, key=f"{ns}_auto")
@@ -197,14 +224,20 @@ def mostrar_carrusel_v2(
             )
         with c_metricas:
             # grande=True: números protagonistas (20px), como los tanques del banner v1
-            mcols = st.columns(3 if d["tiene_alta"] else 2)
+            n_m = 2 + (1 if d["tiene_alta"] else 0) + (1 if d["emerg_total"] > 0 else 0)
+            mcols = st.columns(n_m)
             _mini_metrica(mcols[0], "💧", "Litros", d["pct_lit"], d["sub_lit"],
                           grande=True)
             _mini_metrica(mcols[1], "🏪", "Locales", d["pct_loc"], d["sub_loc"],
                           no_alc_pct=d["no_alc_pct_loc"], grande=True)
+            _col = 2
             if d["tiene_alta"]:
-                _mini_metrica(mcols[2], "⭐", "Alta", d["pct_alta"], d["sub_alta"],
+                _mini_metrica(mcols[_col], "⭐", "Alta", d["pct_alta"], d["sub_alta"],
                               no_alc_pct=d["no_alc_pct_alta"], grande=True)
+                _col += 1
+            if d["emerg_total"] > 0:
+                _mini_metrica(mcols[_col], "🚨", "Emergencias", d["pct_emerg"],
+                              d["sub_emerg"], grande=True)
 
     col_iz, col_der = st.columns([2, 3])
 

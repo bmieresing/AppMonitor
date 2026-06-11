@@ -1,10 +1,16 @@
+import time
+
 import streamlit as st
 import pandas as pd
-from streamlit_autorefresh import st_autorefresh
 
 from connectors.sheets import cargar_datos, cargar_datos_regiones
-from connectors.mysql import cargar_recolecciones, cargar_usuarios_vehiculos
-from connectors.postgres import cargar_vehiculos
+from connectors.mysql import (
+    cargar_recolecciones, cargar_usuarios_vehiculos,
+    cargar_estado_locales, cargar_emergencias, cargar_choferes_usuarios,
+)
+from connectors.postgres import (
+    cargar_vehiculos, cargar_razones, cargar_empleados, cargar_productos,
+)
 from components.helpers.carrusel_data import lista_choferes
 from components.helpers.id_resolver import resolver_recolecciones
 from components.helpers.data_prep import _preparar_datos, _preparar_datos_regiones
@@ -19,16 +25,67 @@ from components.tabs.tab_carrusel_zonas_v2 import mostrar_carrusel_zonas_v2
 from components.tabs.tab_recolecciones import mostrar_tab_recolecciones
 from components.tabs.tab_parametros import mostrar_parametros
 from components.tabs.tab_v2 import mostrar_tab_v2
+from connectors.estado_carga import tomar_ciclo, confirmar_ciclo
+from config import RERUN_SEG
 
 st.set_page_config(layout="wide", page_title="App Monitor")
 
 # Auth: la maneja Streamlit Cloud (whitelist de correos). La app no implementa auth propia.
 
-# Auto-refresh
-intervalo = int(st.secrets.get("refresh_interval_seconds", 300)) * 1000
-st_autorefresh(interval=intervalo, key="refresh")
+# Auto-refresh: rerun completo cada RERUN_SEG; los datos se recargan solo
+# cuando vence su TTL (TTL_DATOS_SEG). Ver nota en config.py sobre el desfase
+# rerun/TTL. Nativo (st.fragment run_every) en vez de st_autorefresh, que no
+# estaba gatillando los reruns en el nivel superior de la app.
+st.session_state["_marca_run_app"] = time.time()
 
-# Cargar datos una sola vez
+
+@st.fragment(run_every=RERUN_SEG)
+def _ciclo_rerun():
+    # El cuerpo también corre durante el run completo (marca recién puesta →
+    # no hace nada); solo el tick del timer, RERUN_SEG después, gatilla el
+    # rerun de toda la app. Sin esta guarda sería un loop infinito.
+    if time.time() - st.session_state.get("_marca_run_app", 0) >= RERUN_SEG - 1:
+        st.rerun(scope="app")
+
+
+_ciclo_rerun()
+
+# Ciclo de datos EXPLÍCITO y ESTRICTO (todo-o-nada): cada TTL_DATOS_SEG se
+# botan todas las cachés y se recargan las 11 tablas juntas, sin importar la
+# vista activa. El ciclo solo se CONFIRMA si NINGUNA tabla falló; si alguna
+# falla, todas las vistas siguen mostrando el último ciclo completo bueno
+# (wrappers _con_respaldo de los conectores) y el próximo rerun (60 s)
+# reintenta el ciclo entero. La fecha de los headers (hora_ciclo) solo
+# avanza cuando un ciclo se confirma.
+# tomar_ciclo() es atómico: si dos reruns/sesiones coinciden (botón ↺ +
+# tick de 60 s, u otra pestaña), solo UNO ejecuta el ciclo — el otro sigue
+# sirviendo el último confirmado. Evita los ciclos dobles.
+_ciclo_nuevo = tomar_ciclo()
+if _ciclo_nuevo:
+    st.cache_data.clear()
+
+# Carga de TODAS las tablas del ciclo, MySQL PRIMERO: si appsheet_db está
+# caído (error 1040), la primera falla activa el fail-fast de los wrappers
+# y el resto del intento ni siquiera consulta PostgreSQL ni los sheets —
+# se sirve el último ciclo confirmado y el próximo rerun reintenta todo.
+# Con caché vigente son hits gratis; tras el clear es la carga real.
+cargar_recolecciones()
+cargar_estado_locales()
+cargar_emergencias()
+cargar_usuarios_vehiculos()
+cargar_choferes_usuarios()
+cargar_empleados()
+cargar_productos()
+cargar_razones()
+cargar_vehiculos()
+cargar_datos()
+cargar_datos_regiones()
+
+if _ciclo_nuevo:
+    confirmar_ciclo()
+
+# Obtener los datos — vía los wrappers, que sirven SIEMPRE la versión del
+# último ciclo confirmado
 df_sheets     = cargar_datos()
 df_rec        = resolver_recolecciones(cargar_recolecciones())
 df_regiones   = cargar_datos_regiones()

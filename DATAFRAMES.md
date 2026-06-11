@@ -7,7 +7,25 @@ Documento generado a partir del código real en `App Monitor/`. Cada entrada ind
 > recálculos `_dc_stgo_v2` y los internos de los tabs). Los KPIs globales se calculan en
 > `components/helpers/kpis.py`. Las constantes (EXCLUIR_LITROS, umbrales, intervalos)
 > viven en `config.py`. Los conectores manejan errores de conexión: si una fuente está
-> caída muestran `st.error` y retornan DataFrame vacío (la app no se cae). Las
+> caída registran la falla en `connectors/estado_carga.py` (log a consola + hora en
+> rojo junto a la fecha de actualización, con el detalle en tooltip) y retornan
+> DataFrame vacío (la app no se cae). No usan `st.error`: dentro de funciones cacheadas
+> queda re-reproducido en pantalla hasta que vence el TTL. Cada recarga real
+> (cache-miss) también se loguea a consola con fuente, tabla y filas. MySQL usa UNA
+> conexión persistente por proceso (`st.cache_resource` + `ping(reconnect)` + lock +
+> `autocommit`) en vez de abrir/cerrar una por query — el RDS de appsheet_db anda al
+> límite de conexiones (error 1040; el diagnóstico mostró ~127/137 slots ocupados por
+> el pool idle de AppSheet). **Ciclo de datos estricto todo-o-nada** (`estado_carga.py`
+> + bloque de ciclo en app.py): cada `TTL_DATOS_SEG` se botan todas las cachés y se
+> recargan las 11 tablas juntas — **MySQL primero, fail-fast**: a la primera falla, el
+> resto del intento ni consulta PostgreSQL ni los sheets (`intento_fallido()`). El
+> ciclo solo se **confirma** si ninguna falló. Si
+> alguna falla, los wrappers `_con_respaldo` (mysql/postgres/sheets) sirven para TODAS
+> las tablas la versión del último ciclo confirmado (`_ultimo_ok` — nunca se mezclan
+> ciclos) y el próximo rerun (60 s) reintenta el ciclo entero. El fracaso nunca queda
+> cacheado (la excepción atraviesa `st.cache_data`). La fecha de los headers es
+> `hora_ciclo()` (último ciclo confirmado) y no avanza si el ciclo falló; el botón ↺
+> usa `forzar_ciclo()`. Las
 > referencias a números de línea de app.py pueden estar desplazadas tras el refactor.
 
 ---
@@ -68,7 +86,7 @@ Los conectores están decorados con `@st.cache_data`. El valor del `ttl` indica 
 **Query:**
 ```sql
 SELECT Litros, Razon, Chofer, Patente, idProducto,
-       idLocalSistema, Local, FechaObservacion
+       idLocalSistema, Local, Emergencia, FechaObservacion
 FROM VistaMonitor WHERE Fecha = '<hoy>'
 ```
 Donde `<hoy>` es la fecha actual en zona horaria `America/Santiago` (`YYYY-MM-DD`).
@@ -77,13 +95,13 @@ Donde `<hoy>` es la fecha actual en zona horaria `America/Santiago` (`YYYY-MM-DD
 transferencia desde RDS. La vista tiene ~24 columnas; las no traídas hoy son:
 `Fecha` (solo se usa en el WHERE), `NombreRuta`, `Peoneta1`, `Peoneta2`, `Mail_Oficial`,
 `Prioridad`, `Estado`, `Comuna`, `CentroAcopio`, `whatsapp_asignado`, `respuesta_whatsapp`,
-`hora_respuesta_whatsapp`, `Observaciones`, `Emergencia`, `ObservacionComun`, `kilometraje`.
+`hora_respuesta_whatsapp`, `Observaciones`, `ObservacionComun`, `kilometraje`.
 Si un widget nuevo necesita una, agregarla al SELECT en `connectors/mysql.py`.
 
 **Transformaciones:**
 1. `Litros` → `pd.to_numeric(..., errors="coerce").fillna(0)` — convierte a float, reemplaza nulos con 0
 
-**Columnas finales:** `Litros`, `Razon`, `Chofer`, `Patente`, `idProducto`, `idLocalSistema`, `Local`, `FechaObservacion`.
+**Columnas finales:** `Litros`, `Razon`, `Chofer`, `Patente`, `idProducto`, `idLocalSistema`, `Local`, `Emergencia`, `FechaObservacion`.
 
 **Depende de:** —
 
@@ -124,7 +142,7 @@ WHERE  lr.Fecha_Registro = '<hoy>'
 **Archivo:** `connectors/mysql.py`  
 **TTL caché:** 300 s  
 **Variable donde se guarda:**
-- **Sin consumidores** desde el refactor 2026-06 (se eliminó el tanque de Emergencias del carrusel). La función sigue disponible en el conector.
+- `df_emerg_all` — en `helpers/carrusel_data.py` (`datos_chofer()`, para el tanque/mini métrica de Emergencias de los carruseles v1/v2/v3; restituido tras estar sin consumidores un tiempo en el refactor 2026-06)
 
 **Base de datos:** MySQL  
 **Query:**
@@ -152,27 +170,28 @@ WHERE  fecha_asignacion_emergencia = '<hoy>'
 - `usuarios` — en `tab_parametros.py` (expander de diagnóstico)
 
 **Base de datos:** MySQL  
-**Query:**
+**Query:** desde 2026-06, `cargar_usuarios_vehiculos()` y `cargar_choferes_usuarios()` (#4b)
+derivan de UN solo SELECT cacheado (`_cargar_usuarios()`, el que aparece en el log
+como `Usuarios`):
 ```sql
 SELECT Vehiculo, Chofer
 FROM   Usuarios
-WHERE  Vehiculo IS NOT NULL
-  AND  Chofer IS NOT NULL
+WHERE  Chofer IS NOT NULL
 ```
 
-**Transformaciones:** ninguna.
+**Transformaciones:** filtra `Vehiculo.notna()` (este loader entrega solo los pares completos).
 
 **Columnas finales:** `Vehiculo` (ID del vehículo), `Chofer` (ID del chofer)
 
-**Depende de:** —
+**Depende de:** `_cargar_usuarios()`
 
 ---
 
 ### 4b. `cargar_choferes_usuarios()` *(agregado en refactor 2026-06)*
 **Archivo:** `connectors/mysql.py`  
-**TTL caché:** 3600 s  
+**TTL caché:** 3600 s (comparte el SELECT único de `_cargar_usuarios()`, ver #4)  
 **Variable donde se guarda:** `u` — en `tab_parametros.py` (`_match_regiones`)  
-**Query:** `SELECT DISTINCT Chofer FROM Usuarios WHERE Chofer IS NOT NULL` (sin filtro de vehículo)  
+**Transformación:** `Chofer` únicos del SELECT compartido (sin filtro de vehículo)  
 **Uso:** diagnóstico de Regiones — distingue si un chofer del sheet sin litros **falta por ingresar en Usuarios (AppSheet)** o si está registrado pero no ha subido recolecciones hoy.  
 **Columnas finales:** `Chofer`
 

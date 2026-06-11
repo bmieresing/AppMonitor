@@ -1,10 +1,20 @@
 import unicodedata
+from datetime import datetime
 
 import pandas as pd
 from connectors.mysql import cargar_usuarios_vehiculos
 from connectors.postgres import cargar_empleados, cargar_vehiculos
 from connectors.sheets import cargar_datos_regiones
+from connectors.estado_carga import hora_ciclo
 from config import EXCLUIR_LITROS
+
+
+def hora_actualizacion() -> datetime:
+    """Hora del último ciclo de datos CONFIRMADO (connectors/estado_carga).
+    No cambia al cambiar de vista, y NO avanza si el ciclo falló: es la fecha
+    real de los datos en pantalla (con el ciclo estricto todo-o-nada, todas
+    las tablas pertenecen siempre al mismo ciclo)."""
+    return hora_ciclo()
 
 
 def _litros(df: pd.DataFrame) -> pd.DataFrame:

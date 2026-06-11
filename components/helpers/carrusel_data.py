@@ -2,7 +2,7 @@
 # Carrusel v1 (HTML) y Carrusel v2 (componentes nativos): los tabs solo renderizan.
 import pandas as pd
 
-from connectors.mysql import cargar_estado_locales
+from connectors.mysql import cargar_estado_locales, cargar_emergencias
 from connectors.postgres import cargar_razones, cargar_empleados
 from components.helpers.data_prep import _litros, _pct, _norm_key, _norm_nombre
 from components.helpers.kpis import exitosas_fallidas, RAZON_NO_ALC
@@ -55,6 +55,19 @@ def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | No
             df_loc_ch = df_locales_all[df_locales_all["Chofer"].astype(str) == str(chofer_id)]
     else:
         df_loc_ch = pd.DataFrame()
+
+    # Emergencias asignadas al chofer hoy (appsheet_db.Emergencias)
+    emerg_total = emerg_realizadas = 0
+    df_emerg_all = cargar_emergencias()
+    if not df_emerg_all.empty and "chofer_asignado" in df_emerg_all.columns and chofer_id is not None:
+        try:
+            emerg_total = int((df_emerg_all["chofer_asignado"].astype(int) == int(chofer_id)).sum())
+        except (ValueError, TypeError):
+            pass
+    if emerg_total > 0 and "Emergencia" in df_c.columns and id_col:
+        emerg_realizadas = len(
+            df_c[df_c["Emergencia"].astype(bool)].drop_duplicates(subset=id_col)
+        )
 
     pendientes = df_loc_ch[df_loc_ch["Estado"] != "Realizado"] if not df_loc_ch.empty else pd.DataFrame()
     if not pendientes.empty and "Prioridad" in pendientes.columns:
@@ -169,5 +182,8 @@ def datos_chofer(df_rec: pd.DataFrame, chofer: str, data_comp: pd.DataFrame | No
         pct_loc=pct_loc, sub_loc=sub_loc, no_alc_pct_loc=no_alc_pct_loc,
         pct_alta=pct_alta, sub_alta=sub_alta, no_alc_pct_alta=no_alc_pct_alta,
         tiene_alta=tiene_alta,
+        emerg_total=emerg_total,
+        pct_emerg=_pct(emerg_realizadas, emerg_total),
+        sub_emerg=f"{emerg_realizadas}/{emerg_total}" if emerg_total > 0 else "—",
         lit_local=lit_local, productos=productos,
     )

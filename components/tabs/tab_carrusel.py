@@ -227,6 +227,7 @@ def mostrar_carrusel(df_rec: pd.DataFrame, data_comp: pd.DataFrame | None = None
         _tanque_b(d["pct_lit"], "💧", "Litros", d["sub_lit"])
         + _tanque_b(d["pct_loc"], "🏪", "Locales", d["sub_loc"], no_alc_pct=d["no_alc_pct_loc"])
         + (_tanque_b(d["pct_alta"], "⭐", "Alta", d["sub_alta"], no_alc_pct=d["no_alc_pct_alta"]) if d["tiene_alta"] else "")
+        + (_tanque_b(d["pct_emerg"], "🚨", "Emergencias", d["sub_emerg"]) if d["emerg_total"] > 0 else "")
     )
 
     st.html(f"""

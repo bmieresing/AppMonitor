@@ -15,3 +15,10 @@ UMBRAL_COMP_AMARILLO = 70
 # Auto-avance de carruseles (segundos)
 INTERVALO_CARRUSEL_SEG = 10
 INTERVALO_ZONAS_SEG = 20
+
+# Ciclo de datos: TTL de las cachés de los loaders (cuándo VENCEN los datos)
+TTL_DATOS_SEG = 300
+# Rerun de la página: debe ser << TTL para refrescar apenas venza una caché.
+# Con rerun == TTL el desfase podía llegar a ~2x TTL (rerun justo antes del
+# vencimiento). El rerun NO consulta las bases: las cachés mandan.
+RERUN_SEG = 60

@@ -1,8 +1,46 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
 from connectors.postgres import cargar_razones
 from config import UMBRAL_VERDE, UMBRAL_AMARILLO
+
+C_EXITOSA = "#28a745"
+C_FALLIDA = "#dc3545"
+
+
+def _color_sem(pct: float) -> str:
+    if pct >= UMBRAL_VERDE:
+        return "#2d7a2d"
+    if pct >= UMBRAL_AMARILLO:
+        return "#e67e22"
+    return "#c0392b"
+
+
+def _caja_chofer(nombre: str, n_exit: int, n_fall: int, pct: float) -> str:
+    """Caja horizontal estilo tanque (de lado): nombre a la izquierda y, en la
+    misma fila, dos segmentos proporcionales exitosas/fallidas con el número
+    de visitas dentro. Los % van en el hover (las cantidades ya se ven en el
+    gráfico). Borde con color semáforo, como los tanques."""
+    color = _color_sem(pct)
+    segs = ""
+    # min-width: que el número siga legible aunque el segmento sea chico
+    for n, fondo in ((n_exit, C_EXITOSA), (n_fall, C_FALLIDA)):
+        if n > 0:
+            segs += (
+                f'<div style="flex:{n} 1 0;min-width:34px;background:{fondo};'
+                f'display:flex;align-items:center;justify-content:center">'
+                f'<span style="font-size:15px;font-weight:900;color:white;'
+                f'text-shadow:0 1px 2px rgba(0,0,0,0.25)">{n}</span></div>'
+            )
+    pct_fall = 100 - pct
+    return (
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" '
+        f'title="{nombre}: {pct:.0f}% exitosas · {pct_fall:.0f}% fallidas">'
+        f'<span style="flex:0 0 150px;font-size:12px;font-weight:700;color:#333;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right">{nombre}</span>'
+        f'<div style="flex:1;display:flex;height:30px;border:2px solid {color};border-radius:6px;'
+        f'overflow:hidden;background:#fafafa">{segs}</div>'
+        f'</div>'
+    )
 
 
 def mostrar_rendimiento(df_rec: pd.DataFrame):
@@ -52,129 +90,35 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
     else:
         df_vis = df[["NombreChofer", "Resultado"]]
 
-    stats = (
-        df_vis.groupby(["NombreChofer", "Resultado"])
-        .size()
-        .reset_index(name="N")
-    )
-    total = stats.groupby("NombreChofer")["N"].sum().reset_index(name="Total")
-    stats = stats.merge(total, on="NombreChofer")
-    stats["Pct"] = (stats["N"] / stats["Total"] * 100).round(1)
-
-    orden = (
-        stats[stats["Resultado"] == "Exitosa"]
-        .sort_values("Pct", ascending=True)["NombreChofer"]
-        .tolist()
-    )
-    todos = df_vis["NombreChofer"].unique().tolist()
-    faltantes = [c for c in todos if c not in orden]
-    orden = faltantes + orden
-
-    col_scale = alt.Scale(
-        domain=["Exitosa", "Fallida"],
-        range=["#28a745", "#dc3545"]
-    )
-
-    # % de exitosas por chofer, visible al final de cada barra con color semáforo
-    pct_lbl = total.merge(
-        stats[stats["Resultado"] == "Exitosa"][["NombreChofer", "Pct"]],
-        on="NombreChofer", how="left",
-    ).fillna({"Pct": 0})
-    pct_lbl["PctTxt"] = pct_lbl["Pct"].round(0).astype(int).astype(str) + "%"
-    pct_lbl["Color"] = pct_lbl["Pct"].apply(
-        lambda p: "#2d7a2d" if p >= UMBRAL_VERDE
-        else "#e67e22" if p >= UMBRAL_AMARILLO else "#c0392b"
-    )
-    max_total = int(total["Total"].max()) if not total.empty else 1
-
-    barras = (
-        alt.Chart(stats)
-        .mark_bar()
-        .encode(
-            y=alt.Y("NombreChofer:N", sort=orden, title=None,
-                    axis=alt.Axis(labelFontSize=11)),
-            x=alt.X("N:Q", stack="zero", title="Visitas",
-                    scale=alt.Scale(domain=[0, max_total * 1.14])),
-            color=alt.Color("Resultado:N", scale=col_scale,
-                            legend=alt.Legend(title=None, orient="top")),
-            tooltip=[
-                alt.Tooltip("NombreChofer:N", title="Chofer"),
-                alt.Tooltip("Resultado:N", title="Resultado"),
-                alt.Tooltip("N:Q", title="Visitas"),
-                alt.Tooltip("Pct:Q", title="%", format=".1f"),
-            ],
-        )
-    )
-
-    etiquetas = (
-        alt.Chart(stats[stats["N"] > 2])
-        # align right + dx negativo: el número queda DENTRO de su segmento,
-        # no montado sobre el borde con el segmento siguiente
-        .mark_text(fontSize=10, fontWeight="bold", color="white", align="right", dx=-5)
-        .encode(
-            y=alt.Y("NombreChofer:N", sort=orden),
-            x=alt.X("N:Q", stack="zero"),
-            detail="Resultado:N",
-            text=alt.Text("N:Q", format=".0f"),
-        )
-    )
-
-    etiq_pct = (
-        alt.Chart(pct_lbl)
-        .mark_text(align="left", dx=6, fontSize=12, fontWeight="bold")
-        .encode(
-            y=alt.Y("NombreChofer:N", sort=orden),
-            x=alt.X("Total:Q"),
-            text="PctTxt:N",
-            color=alt.Color("Color:N", scale=None),
-            tooltip=[
-                alt.Tooltip("NombreChofer:N", title="Chofer"),
-                alt.Tooltip("Pct:Q", title="% Exitosas", format=".1f"),
-            ],
-        )
-    )
-
-    chart = (
-        (barras + etiquetas + etiq_pct)
-        .resolve_scale(color="independent")
-        .properties(
-            title=alt.TitleParams(
-                "EFECTIVIDAD POR CHOFER — EXITOSAS VS FALLIDAS (%)",
-                fontSize=13, fontWeight="bold", anchor="start"
-            ),
-            height=max(300, len(orden) * 28),
-        )
-        .configure_view(strokeWidth=0)
-        .configure_axis(grid=False)
-    )
-
-    st.altair_chart(chart, width='stretch')
-
-    st.divider()
     base = (
         df_vis.groupby("NombreChofer")["Resultado"]
         .value_counts()
         .unstack(fill_value=0)
         .reindex(columns=["Exitosa", "Fallida"], fill_value=0)
         .reset_index()
-        .rename(columns={"NombreChofer": "Chofer", "Exitosa": "N Exitosas", "Fallida": "N Fallidas"})
     )
-    base["Total"] = base["N Exitosas"] + base["N Fallidas"]
-    base["% Exitosas"] = (base["N Exitosas"] / base["Total"] * 100).round(1)
-    base["% Fallidas"] = (base["N Fallidas"] / base["Total"] * 100).round(1)
-    resumen = base[["Chofer", "N Exitosas", "N Fallidas", "% Exitosas", "% Fallidas"]].sort_values("% Exitosas", ascending=False)
+    base["Total"] = base["Exitosa"] + base["Fallida"]
+    base["Pct"] = (base["Exitosa"] / base["Total"] * 100).round(1)
 
-    def _color_exitosas(col):
-        return [
-            "color:#155724;font-weight:bold" if v >= 80 else
-            ("color:#721c24;font-weight:bold" if v < 50 else "")
-            for v in col
-        ]
-
-    styled = (
-        resumen.style
-        .format({"N Exitosas": "{:.0f}", "N Fallidas": "{:.0f}",
-                 "% Exitosas": "{:.1f}%", "% Fallidas": "{:.1f}%"})
-        .apply(_color_exitosas, subset=["% Exitosas"])
+    # Cajas por chofer (estilo tanque de lado), peores % primero como en el
+    # gráfico anterior, repartidas en dos columnas
+    st.markdown(
+        '<div style="font-size:13px;font-weight:700;margin-bottom:2px">'
+        'EFECTIVIDAD POR CHOFER — EXITOSAS VS FALLIDAS</div>'
+        f'<div style="font-size:12px;color:#666;margin-bottom:10px">'
+        f'<span style="color:{C_EXITOSA}">●</span> Exitosas&nbsp;&nbsp;'
+        f'<span style="color:{C_FALLIDA}">●</span> Fallidas&nbsp;&nbsp;'
+        f'(número = visitas)</div>',
+        unsafe_allow_html=True,
     )
-    st.dataframe(styled, width='stretch', hide_index=True)
+    filas = base.sort_values("Pct", ascending=True)
+    cajas = [
+        _caja_chofer(r["NombreChofer"], int(r["Exitosa"]), int(r["Fallida"]), r["Pct"])
+        for _, r in filas.iterrows()
+    ]
+    mitad = -(-len(cajas) // 2)
+    col_a, col_b = st.columns(2, gap="large")
+    with col_a:
+        st.markdown("".join(cajas[:mitad]), unsafe_allow_html=True)
+    with col_b:
+        st.markdown("".join(cajas[mitad:]), unsafe_allow_html=True)

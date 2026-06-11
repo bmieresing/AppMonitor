@@ -12,6 +12,7 @@ from config import (
     UMBRAL_VERDE, UMBRAL_AMARILLO,
     UMBRAL_COMP_VERDE, UMBRAL_COMP_AMARILLO,
     INTERVALO_CARRUSEL_SEG, INTERVALO_ZONAS_SEG,
+    TTL_DATOS_SEG, RERUN_SEG,
 )
 
 
@@ -325,8 +326,12 @@ def mostrar_parametros(
             delta_color="off",
         )
         c2.metric(
-            "Refresh página (seg)",
-            int(st.secrets.get("refresh_interval_seconds", 300)),
+            "Ciclo de datos (seg)",
+            TTL_DATOS_SEG,
+            delta=f"rerun cada {RERUN_SEG}s",
+            delta_color="off",
+            help="Los datos vencen cada TTL_DATOS_SEG; la página hace rerun cada "
+                 "RERUN_SEG para recargarlos apenas venzan (sin consultar antes las bases)",
         )
         c3.metric("Auto-avance Carrusel (seg)", INTERVALO_CARRUSEL_SEG)
         c4.metric("Auto-avance Carrusel Zonas (seg)", INTERVALO_ZONAS_SEG)

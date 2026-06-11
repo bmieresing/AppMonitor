@@ -23,7 +23,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | 3 | Tanque — Litros | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
 | 4 | Tanque — Locales | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
 | 5 | Tanque — Alta | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
-| 6 | ~~Tanque — Emergencias~~ (eliminado) | — |
+| 6 | Tanque — Emergencias (restituido) | `tabs/tab_carrusel.py` / `tabs/tab_carrusel_v2.py` |
 | **KPI Donuts CSS** (`_donuts_global`) | | |
 | 7 | Donut CSS — Litros vs Esperado | `widgets/donuts.py` |
 | 8 | Donut CSS — Locales Realizados | `widgets/donuts.py` |
@@ -139,11 +139,9 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ---
 
-## 6. Tanque — Emergencias — ELIMINADO
-**Eliminado en el refactor 2026-06** a pedido del usuario: el banner del carrusel quedó
-solo con Litros / Locales / Alta, con la misma lógica que las cards de choferes
-(`Estado == "Realizado"` descontando "no alcanzamos a pasar"). `cargar_emergencias()`
-quedó sin consumidores.
+## 6. Tanque — Emergencias
+**Archivos:** `tabs/tab_carrusel.py` (`_tanque_b()`) y `tabs/tab_carrusel_v2.py` (mini métrica `grande=True`)  
+**Nota:** eliminado y luego **restituido** en el refactor 2026-06. Los valores se calculan en `datos_chofer()` (`helpers/carrusel_data.py`): `emerg_total` = emergencias asignadas al chofer hoy (`cargar_emergencias()`), `emerg_realizadas` = locales con `Emergencia` true en `df_c` dedup por local. Solo aparece si `emerg_total > 0`. Presente en los carruseles v1 (tanque 🚨 del banner), v2 y v3 (cuarta mini métrica del banner).
 
 ---
 
@@ -501,8 +499,8 @@ Recuperable desde el historial de git.
 **Archivo:** `components/tabs/tab_rendimiento.py`  
 **Llamada desde app.py:** `mostrar_rendimiento(df_rec)`  
 **Dataframes:** `df_rec` (todas las recolecciones); carga internamente `cargar_razones()` para el multiselect de exclusión.  
-**Función:** Gráfico de barras apiladas Altair (exitosas vs fallidas por chofer) + tabla de resumen coloreada. Permite excluir razones del cálculo.  
-**Estilos gráfico:** colores `#28a745/#dc3545`; etiquetas dentro de barras `10px/bold/blanco` solo si N>2; altura `max(300, choferes * 28)px`. Tabla: ≥80% `#155724/bold` · <50% `#721c24/bold`.
+**Función:** Cajas HTML por chofer (estilo tanque "de lado", `_caja_chofer`): nombre a la izquierda (150px, ellipsis) y en la misma fila dos segmentos proporcionales exitosas/fallidas con el N de visitas dentro; los % exitosas/fallidas van en el hover (title); borde 2px color semáforo. Choferes en dos columnas (peores % primero, mitades izquierda/derecha). Reemplazó al gráfico de barras Altair y a la tabla de resumen (ambos eliminados 2026-06). Permite excluir razones del cálculo.  
+**Estilos:** colores `#28a745/#dc3545`; caja 30px de alto, radio 6px; números 15px/900/blanco; `min-width: 34px` por segmento para que el número siga legible.
 
 ---
 
@@ -580,7 +578,7 @@ Recuperable desde el historial de git.
 - `_dc_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)` — comparativa Regiones
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_reg`
 
-**Función:** Idéntica al Tab Santiago v2 pero con datos de choferes de Regiones y comparativa calculada por nombre (sin patente). El **modo compacto** se controla con un `st.toggle` "Compacto" en el encabezado (disponible en los 3 tabs v2; encendido por defecto solo en Regiones). Compacto = espejo del modo compacto de `_donuts_global` v1: donut KPI 100px (vs 150), emoji 22px (vs 34), valor 0.95rem (vs 1.4), mini métricas 38px de alto (vs 52), nombre de chofer 13px, y CSS que reduce gaps y padding de los containers.
+**Función:** Idéntica al Tab Santiago v2 pero con datos de choferes de Regiones y comparativa calculada por nombre (sin patente). El **modo compacto** se controla con un `st.toggle` "Compacto" en el encabezado (disponible en los 3 tabs v2; encendido por defecto solo en Regiones). El encabezado v2/v3 es único: título a la izquierda y, en la misma fila a la derecha, fecha de actualización + botón `↺` + toggle Compacto (container horizontal alineado a la derecha). Compacto = espejo del modo compacto de `_donuts_global` v1: donut KPI 100px (vs 150), emoji 22px (vs 34), valor 0.95rem (vs 1.4), mini métricas 38px de alto (vs 52), nombre de chofer 13px, y CSS que reduce gaps y padding de los containers.
 
 ---
 
@@ -588,7 +586,7 @@ Recuperable desde el historial de git.
 **Archivo:** `components/tabs/tab_carrusel_v2.py` — decorado con `@st.fragment`  
 **Llamada desde app.py:** `mostrar_carrusel_v2(df_rec, data_comp=data_comp_todos)`  
 **Dataframes:** los mismos del Carrusel v1 — toda la lógica de datos sale de `datos_chofer()` en `helpers/carrusel_data.py` (compartida con v1; los tabs solo renderizan).  
-**Función:** Espejo nativo del Tab Carrusel (#37): selector `st.pills` + toggle Auto (10 seg, keys `carrusel2_*` independientes de v1) → banner con `st.container(border=True)`: nombre del chofer (`st.subheader`) + ruta (`st.caption`) + mini métricas Litros/Locales/Alta (#26–#28, con capa roja de "no alc.") → Donut Plotly de desglose (mismos colores y segmentos que el Altair #17, hole 0.55, leyenda horizontal abajo) + 4 `st.metric` en containers (Exitosas/Fallidas/Pend. Alta/Pend. Normal) → Top 5 ± litros y Por producto como `st.dataframe` con `ProgressColumn` (barras nativas).
+**Función:** Espejo nativo del Tab Carrusel (#37): fila de fecha de actualización + botón `↺` chico arriba del selector (el `↺` limpia caché y hace `st.rerun(scope="app")` porque el carrusel es un fragment) → selector `st.pills` + toggle Auto (10 seg, keys `carrusel2_*` independientes de v1) → banner con `st.container(border=True)`: nombre del chofer (`st.subheader`) + ruta (`st.caption`) + mini métricas Litros/Locales/Alta (#26–#28, con capa roja de "no alc.") → Donut Plotly de desglose (mismos colores y segmentos que el Altair #17, hole 0.55, leyenda horizontal abajo) + 4 `st.metric` en containers (Exitosas/Fallidas/Pend. Alta/Pend. Normal) → Top 5 ± litros y Por producto como `st.dataframe` con `ProgressColumn` (barras nativas).
 
 ---
 
@@ -608,7 +606,7 @@ Recuperable desde el historial de git.
 | 3 | Tanque Litros | `data_comp["LitrosHoy"]`, `data_comp["Prom"]` | — |
 | 4 | Tanque Locales | `df_locales["Estado"]`, `df_rec["Razon"]` | — |
 | 5 | Tanque Alta | `df_locales["Prioridad"]`, `df_rec["Razon"]` | — |
-| 6 | ~~Tanque Emergencias~~ (eliminado) | — | — |
+| 6 | Tanque Emergencias | `df_emerg_all`, `df_c["Emergencia"]` | `cargar_emergencias()` |
 | 7 | Donut CSS Litros | `df_rec["Litros"]`, `data_comp["Prom"]` | `cargar_datos_regiones()` |
 | 8 | Donut CSS Locales | `df_locales["Estado"]`, `df_rec["Razon"]` | — |
 | 9 | Donut CSS Alta | `df_locales["Prioridad"]`, `df_rec["Razon"]` | — |
