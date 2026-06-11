@@ -99,7 +99,7 @@ def _con_respaldo(tabla: str):
 
 
 @_con_respaldo("VistaMonitor")
-@st.cache_data(ttl=TTL_DATOS_SEG)
+@st.cache_data(ttl=TTL_DATOS_SEG * 2)  # respaldo: el ciclo (clear) manda; 2x evita vencimientos fuera de ciclo
 def cargar_recolecciones() -> pd.DataFrame:
     # Solo las columnas que la app consume: la vista tiene ~24 y el resto
     # (observaciones, whatsapp, comuna, etc.) viajaba desde RDS sin usarse.
@@ -117,7 +117,7 @@ def cargar_recolecciones() -> pd.DataFrame:
 
 
 @_con_respaldo("LocalesRuta")
-@st.cache_data(ttl=TTL_DATOS_SEG)
+@st.cache_data(ttl=TTL_DATOS_SEG * 2)  # respaldo: el ciclo (clear) manda; 2x evita vencimientos fuera de ciclo
 def cargar_estado_locales() -> pd.DataFrame:
     """Todos los locales de las rutas activas hoy con su Estado actual.
     TTL alineado al ciclo de datos del dashboard."""
@@ -131,7 +131,7 @@ def cargar_estado_locales() -> pd.DataFrame:
 
 
 @_con_respaldo("Emergencias")
-@st.cache_data(ttl=TTL_DATOS_SEG)
+@st.cache_data(ttl=TTL_DATOS_SEG * 2)  # respaldo: el ciclo (clear) manda; 2x evita vencimientos fuera de ciclo
 def cargar_emergencias() -> pd.DataFrame:
     """Emergencias asignadas hoy con chofer_asignado. Fuente: appsheet_db.Emergencias."""
     return _query(

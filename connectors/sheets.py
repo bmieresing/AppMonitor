@@ -56,7 +56,7 @@ def _letra_col(i: int) -> str:
     return letras
 
 @_con_respaldo("Seguimiento diario")
-@st.cache_data(ttl=TTL_DATOS_SEG)
+@st.cache_data(ttl=TTL_DATOS_SEG * 2)  # respaldo: el ciclo (clear) manda; 2x evita vencimientos fuera de ciclo
 def cargar_datos() -> pd.DataFrame:
     try:
         gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
@@ -122,7 +122,7 @@ def mapear_zona(tripulacion: str) -> str | None:
 
 
 @_con_respaldo("Control Regiones")
-@st.cache_data(ttl=TTL_DATOS_SEG)
+@st.cache_data(ttl=TTL_DATOS_SEG * 2)  # respaldo: el ciclo (clear) manda; 2x evita vencimientos fuera de ciclo
 def cargar_datos_regiones() -> pd.DataFrame:
     try:
         gc = gspread.service_account_from_dict(dict(st.secrets["gcp_service_account"]))
