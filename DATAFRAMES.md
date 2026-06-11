@@ -43,7 +43,7 @@ Documento generado a partir del código real en `App Monitor/`. Cada entrada ind
 | 25 | `df_locales` | Interno — tabs | `tab_global.py`, `tab_zonas.py`, `tab_carrusel.py`, `tab_v2.py` |
 | 26 | `data_comp` (interno) | Interno — tabs | `tab_global.py`, `tab_zonas.py` |
 | 27 | `_data_comp_reg` | Interno — tabs | `app.py` (tab_reg), `tab_carrusel_zonas.py` |
-| 28 | `df_emerg_all` | Interno — tab_carrusel | `components/tabs/tab_carrusel.py` |
+| 28 | ~~`df_emerg_all`~~ (eliminado) | — | — |
 | 29 | `df_loc_ch` | Interno — tab_carrusel | `components/tabs/tab_carrusel.py` |
 | 30 | `df_c` | Interno — tab_carrusel | `components/tabs/tab_carrusel.py` |
 | 31 | `razon_counts` | Interno — tab_carrusel | `components/tabs/tab_carrusel.py` |
@@ -64,18 +64,26 @@ Los conectores están decorados con `@st.cache_data`. El valor del `ttl` indica 
 **Variable donde se guarda:**
 - No tiene nombre propio en `app.py` — se pasa directamente a `resolver_recolecciones(cargar_recolecciones())`
 
-**Base de datos:** MySQL (`appsheet_db`, por confirmar el nombre exacto — viene de `st.secrets["mysql"]["database"]`)  
+**Base de datos:** MySQL (`appsheet_db`)  
 **Query:**
 ```sql
-SELECT * FROM VistaMonitor WHERE Fecha = '<hoy>'
+SELECT Litros, Razon, Chofer, Patente, idProducto,
+       idLocalSistema, Local, FechaObservacion
+FROM VistaMonitor WHERE Fecha = '<hoy>'
 ```
 Donde `<hoy>` es la fecha actual en zona horaria `America/Santiago` (`YYYY-MM-DD`).
+
+**Nota (refactor 2026-06):** se cambió de `SELECT *` a columnas explícitas para reducir
+transferencia desde RDS. La vista tiene ~24 columnas; las no traídas hoy son:
+`Fecha` (solo se usa en el WHERE), `NombreRuta`, `Peoneta1`, `Peoneta2`, `Mail_Oficial`,
+`Prioridad`, `Estado`, `Comuna`, `CentroAcopio`, `whatsapp_asignado`, `respuesta_whatsapp`,
+`hora_respuesta_whatsapp`, `Observaciones`, `Emergencia`, `ObservacionComun`, `kilometraje`.
+Si un widget nuevo necesita una, agregarla al SELECT en `connectors/mysql.py`.
 
 **Transformaciones:**
 1. `Litros` → `pd.to_numeric(..., errors="coerce").fillna(0)` — convierte a float, reemplaza nulos con 0
 
-**Columnas finales:** Todas las de `VistaMonitor` (por confirmar — `SELECT *`).  
-Columnas confirmadas como usadas por el resto de la app: `Fecha`, `Litros`, `Chofer`, `Peoneta1`, `Peoneta2`, `Patente`, `idProducto`, `idLocalSistema`, `Razon`, `Emergencia`, `FechaObservacion`.
+**Columnas finales:** `Litros`, `Razon`, `Chofer`, `Patente`, `idProducto`, `idLocalSistema`, `Local`, `FechaObservacion`.
 
 **Depende de:** —
 
@@ -83,7 +91,7 @@ Columnas confirmadas como usadas por el resto de la app: `Fecha`, `Litros`, `Cho
 
 ### 2. `cargar_estado_locales()`
 **Archivo:** `connectors/mysql.py`  
-**TTL caché:** 60 s (1 min — refresco frecuente para ver el estado en tiempo real)  
+**TTL caché:** 300 s (alineado al ciclo de 5 min del dashboard; antes era 60 s y cambiar de tab refrescaba estos datos fuera de ciclo)  
 **Variable donde se guarda:**
 - `df_locales` — en `tab_global.py`, `tab_zonas.py`, `tab_v2.py` (ya filtrado por `choferes_filter`)
 - `df_locales_all` — en `tab_carrusel.py` (sin filtrar; luego se filtra a `df_loc_ch` por chofer activo)
@@ -116,7 +124,7 @@ WHERE  lr.Fecha_Registro = '<hoy>'
 **Archivo:** `connectors/mysql.py`  
 **TTL caché:** 300 s  
 **Variable donde se guarda:**
-- `df_emerg_all` — en `tab_carrusel.py` (`mostrar_carrusel`)
+- **Sin consumidores** desde el refactor 2026-06 (se eliminó el tanque de Emergencias del carrusel). La función sigue disponible en el conector.
 
 **Base de datos:** MySQL  
 **Query:**
@@ -157,6 +165,16 @@ WHERE  Vehiculo IS NOT NULL
 **Columnas finales:** `Vehiculo` (ID del vehículo), `Chofer` (ID del chofer)
 
 **Depende de:** —
+
+---
+
+### 4b. `cargar_choferes_usuarios()` *(agregado en refactor 2026-06)*
+**Archivo:** `connectors/mysql.py`  
+**TTL caché:** 3600 s  
+**Variable donde se guarda:** `u` — en `tab_parametros.py` (`_match_regiones`)  
+**Query:** `SELECT DISTINCT Chofer FROM Usuarios WHERE Chofer IS NOT NULL` (sin filtro de vehículo)  
+**Uso:** diagnóstico de Regiones — distingue si un chofer del sheet sin litros **falta por ingresar en Usuarios (AppSheet)** o si está registrado pero no ha subido recolecciones hoy.  
+**Columnas finales:** `Chofer`
 
 ---
 
@@ -288,7 +306,7 @@ WHERE  active = TRUE
 - `df_reg_data` — en `donuts.py` (`_donuts_global`), para obtener el promedio esperado de Regiones
 - `df_reg` — en `cards.py` (`_desempeno_centros`), para obtener el promedio por zona
 
-**Fuente:** Google Sheets — hoja `sheet_name_regiones` (default `"Control Regiones"`), rango `A:F`  
+**Fuente:** Google Sheets — hoja `sheet_name_regiones` (default `"Control Regiones"`), rango `A:I` (ampliado de A:F para incluir la columna RUTA, col I)  
 **Transformaciones:**
 1. Toma todas las filas a partir de la fila 2 (fila 1 = cabecera)
 2. Reemplaza `"#N/A"`, `"#DIV/0!"`, `""`, `"-"` por `None`
@@ -297,8 +315,8 @@ WHERE  active = TRUE
 5. Agrega columna `Zona`: aplica `mapear_zona()` sobre la columna TRIPULACION; cada fila recibe la zona según el prefijo de la tripulación (mapa `ZONA_MAP` con 10 zonas definidas en código)
 6. Parsea numérico la columna PROM: `str → quitar "." → reemplazar "," por "." → float`; idem para columna LITROS (si existe)
 
-**Columnas finales:** Las 6 columnas del rango A:F del sheet (nombres **por confirmar**) + `Zona` (calculada).  
-Columnas conocidas como usadas: la que contiene `"CHOFER"` o `"TRIPULACI"`, la que contiene `"PROM"`, la que contiene `"LITROS"`, `Zona`.
+**Columnas finales:** Las columnas del rango A:I del sheet (nombres **por confirmar**) + `Zona` (calculada).  
+Columnas conocidas como usadas: la que contiene `"CHOFER"` o `"TRIPULACI"`, la que contiene `"PROM"`, la que contiene `"LITROS"`, la que contiene `"RUTA"` sin `"PROM"` (col I — ruta del chofer), `Zona`.
 
 **Depende de:** —
 
@@ -315,13 +333,13 @@ Estos se crean una sola vez al inicio de la aplicación y se pasan como argument
 **Origen:** `resolver_recolecciones(cargar_recolecciones())`  
 **Transformaciones** (realizadas por `resolver_recolecciones()` en `components/helpers/id_resolver.py`):
 1. Agrega columna `NombreChofer`: mapea `Chofer` (ID) → nombre completo usando `cargar_empleados()`
-2. Agrega columna `NombrePeoneta1`: mapea `Peoneta1` (ID) → nombre usando `cargar_empleados()`
-3. Agrega columna `NombrePeoneta2`: mapea `Peoneta2` (ID) → nombre usando `cargar_empleados()`
-4. Agrega columna `Patente_Real`: mapea `Patente` (ID numérico) → patente alfanumérica usando `cargar_vehiculos()` (`plate`)
-5. Agrega columna `Producto`: mapea `idProducto` (ID numérico) → nombre del producto usando `cargar_productos()` (`name`)
-6. Deduplica por `(idLocalSistema, idProducto)` — elimina filas repetidas de la vista MySQL
+2. Agrega columna `Patente_Real`: mapea `Patente` (ID numérico) → patente alfanumérica usando `cargar_vehiculos()` (`plate`)
+3. Agrega columna `Producto`: mapea `idProducto` (ID numérico) → nombre del producto usando `cargar_productos()` (`name`)
+4. Deduplica por `(idLocalSistema, idProducto)` — elimina filas repetidas de la vista MySQL
 
-**Columnas finales:** Todas las de `VistaMonitor` (por confirmar) + `NombreChofer`, `NombrePeoneta1`, `NombrePeoneta2`, `Patente_Real`, `Producto`
+(Los mapeos de `Peoneta1`/`Peoneta2` se eliminaron en el refactor 2026-06: nadie consumía `NombrePeoneta1/2`.)
+
+**Columnas finales:** Las 8 de `cargar_recolecciones()` + `NombreChofer`, `Patente_Real`, `Producto`
 
 **Depende de:** `cargar_recolecciones()`, `cargar_empleados()`, `cargar_vehiculos()`, `cargar_productos()`
 
@@ -389,7 +407,7 @@ Estos se crean una sola vez al inicio de la aplicación y se pasan como argument
 9. `SobreMeta = LitrosHoy >= Prom` (bool)
 10. Ordena descendente por `Pct`
 
-**Columnas finales:** `Patente`, `Prom`, `NombreChofer`, `LitrosHoy`, `Chofer`, `Pct`, `SobreMeta`  
+**Columnas finales:** `Patente`, `Prom`, `Ruta` (columna Ruta/col Z del sheet Santiago, si existe), `NombreChofer`, `LitrosHoy`, `Chofer`, `Pct`, `SobreMeta`  
 **Depende de:** `df_sheets`, `df_rec_stgo`, `cargar_usuarios_vehiculos()`, `cargar_vehiculos()`, `cargar_empleados()`  
 **Retorna `None`** si el sheet no tiene columna PATENTE o PROM. En app.py se convierte a `pd.DataFrame()` vacío en ese caso.
 
@@ -412,7 +430,7 @@ Estos se crean una sola vez al inicio de la aplicación y se pasan como argument
 10. `Pct = LitrosHoy / Prom * 100` (solo si Prom > 0, en caso contrario 0; redondeado a 1 decimal)
 11. Ordena descendente por `LitrosHoy`
 
-**Columnas finales:** `Chofer`, `Prom`, `LitrosHoy`, `Pct`  
+**Columnas finales:** `Chofer`, `Prom`, `Ruta` (columna RUTA/col I del sheet Regiones, si existe), `LitrosHoy`, `Pct`  
 **Depende de:** `df_regiones`, `df_rec_reg`
 
 ---
@@ -545,18 +563,13 @@ Estos se crean dentro de funciones de tab y nunca salen de su scope. Se document
 
 ---
 
-### 28. `df_emerg_all`
-**Archivo:** `components/tabs/tab_carrusel.py`  
-**Origen:** `cargar_emergencias()`  
-**Transformaciones:** ninguna posterior.  
-**Uso:** Filtrado dentro del carrusel para contar emergencias del chofer activo.  
-**Columnas finales:** `id_local`, `chofer_asignado`  
-**Depende de:** `cargar_emergencias()`
+### 28. `df_emerg_all` — ELIMINADO
+**Eliminado en el refactor 2026-06** junto con el tanque de Emergencias del carrusel.
 
 ---
 
 ### 29. `df_loc_ch`
-**Archivo:** `components/tabs/tab_carrusel.py`  
+**Archivo:** `components/helpers/carrusel_data.py` (`datos_chofer()` — compartido por Carrusel v1 y v2)  
 **Origen:** `cargar_estado_locales()` (llamado como `df_locales_all`) filtrado por `Chofer == chofer_id`  
 **Transformaciones:**
 1. `df_locales_all = cargar_estado_locales()` — todos los locales del día
@@ -568,7 +581,7 @@ Estos se crean dentro de funciones de tab y nunca salen de su scope. Se document
 ---
 
 ### 30. `df_c`
-**Archivo:** `components/tabs/tab_carrusel.py`  
+**Archivo:** `components/helpers/carrusel_data.py` (`datos_chofer()` — compartido por Carrusel v1 y v2)  
 **Origen:** `df_rec` filtrado para el chofer activo del carrusel  
 **Transformaciones:**
 1. Filtro: `df_rec[df_rec["NombreChofer"] == chofer].copy()`
@@ -581,7 +594,7 @@ Estos se crean dentro de funciones de tab y nunca salen de su scope. Se document
 ---
 
 ### 31. `razon_counts`
-**Archivo:** `components/tabs/tab_carrusel.py`  
+**Archivo:** `components/helpers/carrusel_data.py` (`datos_chofer()` — compartido por Carrusel v1 y v2)  
 **Origen:** `df_c` (filas con `Razon` no nula)  
 **Transformaciones:**
 1. Filtra `df_c` donde `Razon.notna()`

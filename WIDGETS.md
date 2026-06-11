@@ -23,7 +23,7 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | 3 | Tanque — Litros | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
 | 4 | Tanque — Locales | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
 | 5 | Tanque — Alta | `widgets/tanque.py` vía `cards.py`, `tab_carrusel.py` |
-| 6 | Tanque — Emergencias | `widgets/tanque.py` vía `tab_carrusel.py` |
+| 6 | ~~Tanque — Emergencias~~ (eliminado) | — |
 | **KPI Donuts CSS** (`_donuts_global`) | | |
 | 7 | Donut CSS — Litros vs Esperado | `widgets/donuts.py` |
 | 8 | Donut CSS — Locales Realizados | `widgets/donuts.py` |
@@ -70,6 +70,13 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 | 41 | Tab Santiago v2 | `tabs/tab_v2.py` |
 | 42 | Tab Global v2 | `tabs/tab_v2.py` |
 | 43 | Tab Regiones v2 | `tabs/tab_v2.py` |
+| 44 | Tab Carrusel v2 | `tabs/tab_carrusel_v2.py` |
+| 45 | Tab Carrusel Zonas v2 | `tabs/tab_carrusel_zonas_v2.py` |
+| 46 | Tab Santiago v3 | `tabs/tab_v2.py` (`emoji_lado=True`) |
+| 47 | Tab Global v3 | `tabs/tab_v2.py` (`emoji_lado=True`) |
+| 48 | Tab Regiones v3 | `tabs/tab_v2.py` (`emoji_lado=True`) |
+| 49 | Tab Carrusel v3 | `tabs/tab_carrusel_v2.py` (`keys_ns="carrusel3"`) |
+| 50 | Tab Carrusel Zonas v3 | `tabs/tab_carrusel_zonas_v2.py` (`keys_ns="czv3"`, `emoji_lado=True`) |
 
 ---
 
@@ -85,8 +92,8 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 **Archivo:** `components/widgets/layout.py`  
 **Firma:** `_header(tab_nombre, key_prefix="")`  
 **Dataframes:** ninguno  
-**Función:** Banner superior con nombre del tab, timestamp y botón "↺ Actualizar". El botón llama `st.cache_data.clear()` + `st.rerun()`.  
-**Estilos:** fondo `#1a472a`, padding `8px 20px`, border-radius `6px`; título `16px / 700 / letter-spacing 1px`; badge tab `rgba(255,255,255,0.18) / 18px / 700 / letter-spacing 2px`; timestamp `12px / line-height 1.6`; badge EN VIVO `#28a745 / bold`; botón `#1a472a / blanco / borde rgba(255,255,255,0.35) / 600`.
+**Función:** Banner superior con nombre del tab, timestamp y botón `↺` (que llama `st.cache_data.clear()` + `st.rerun()`). Desde el refactor 2026-06 es un `st.container(key=...)` estilizado vía clase `.st-key-*`, con el botón **dentro** del banner (reemplazó al badge "● EN VIVO", eliminado).  
+**Estilos:** fondo `#1a472a`, padding `8px 20px`, border-radius `6px`; título `16px / 700 / letter-spacing 1px / blanco`; badge tab `rgba(255,255,255,0.18) / 18px / 700 / letter-spacing 2px`; timestamp `12px / blanco 0.85`; botón `rgba(255,255,255,0.12) / blanco / borde rgba(255,255,255,0.35) / 600`.
 
 ---
 
@@ -132,16 +139,11 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 
 ---
 
-## 6. Tanque — Emergencias
-**Archivo:** `components/widgets/tanque.py` (función `_tanque_b()`), llamado solo desde `tab_carrusel.py`  
-**Dataframes usados para calcular los valores de entrada:**
-- `df_emerg_all["chofer_asignado"] == chofer_id` → `emerg_total` (emergencias asignadas al chofer hoy)
-- `df_c["Emergencia"].astype(bool)` deduplicado por `idLocalSistema` → `emerg_realizadas`
-- `pct = int(emerg_realizadas / emerg_total * 100)`
-- `sub = f"{emerg_realizadas}/{emerg_total}"`
-
-**Función:** Barra de nivel para emergencias asignadas al chofer activo en el carrusel. Solo aparece si `emerg_total > 0`.  
-**Estilos:** usa `_tanque_b()` — diseño oscuro para el banner; borde/texto `≥100%` → `#81c784`, `≥80%` → `#a5d6a7`, `≥50%` → `#ffb74d`, `<50%` → `#ef9a9a`.
+## 6. Tanque — Emergencias — ELIMINADO
+**Eliminado en el refactor 2026-06** a pedido del usuario: el banner del carrusel quedó
+solo con Litros / Locales / Alta, con la misma lógica que las cards de choferes
+(`Estado == "Realizado"` descontando "no alcanzamos a pasar"). `cargar_emergencias()`
+quedó sin consumidores.
 
 ---
 
@@ -194,9 +196,9 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 **Criterio (por local único):** exitosa si la suma de `Litros` del local > 0; fallida si tiene `Razon` y no juntó litros. Mutuamente excluyentes e inmune al orden de las filas por producto de `VistaMonitor`.  
 - `pct_exit = _pct(exitosas, exitosas + fallidas)`
 
-**Función:** Donut que muestra el ratio de visitas exitosas vs fallidas.  
+**Función:** Donut que muestra el ratio de visitas exitosas vs fallidas, con las fallidas desglosadas: "no alcanzamos a pasar" como segmento propio.  
 **Valor mostrado:** `f"{exitosas:,} / {fallidas:,}"` (exitosas / fallidas)  
-**Colores donut:** verde `#28a745` (exitosas) · rojo `#dc3545` (fallidas).
+**Colores donut:** verde `#28a745` (exitosas) · rojo `#e53935` `C_NO_ALC` (fallidas por no alc.) · rojo tenue `#ef9a9a` (otras fallidas).
 
 ---
 
@@ -253,11 +255,11 @@ Basado únicamente en el código real. Lo no verificable está marcado **por con
 ## 15. Donut Plotly — Recolecciones Exitosas
 **Archivo:** `components/tabs/tab_v2.py`  
 **Dataframes:**
-- `calcular_kpis(...)["pct_exit"]`, `["exitosas"]`, `["fallidas"]` — mismo criterio que el widget #10 (`helpers/kpis.py`)
-- `color_fill="#28a745"`, `color_bg="#dc3545"` → no hay segmento gris, el "bg" es el rojo de fallidas
+- `calcular_kpis(...)["pct_exit"]`, `["exitosas"]`, `["fallidas"]`, `["fallidas_no_alc"]` — mismo criterio que el widget #10 (`helpers/kpis.py`, `desglose_recolecciones()`)
+- `color_fill="#28a745"`, `segmento_alerta` = % de fallidas por no alc. (rojo `#e53935`), `color_bg="#ef9a9a"` (otras fallidas)
 
-**Función:** Donut Plotly para exitosas vs fallidas. El agujero verde representa exitosas; el relleno externo rojo representa fallidas.  
-**Leyenda:** verde Exitosas · rojo Fallidas.
+**Función:** Donut Plotly para exitosas vs fallidas, con "no alcanzamos a pasar" como segmento rojo propio.  
+**Leyenda:** verde Exitosas · rojo No alc. · rojo tenue Otras fallidas.
 
 ---
 
@@ -302,7 +304,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `df_rec["Razon"] == 11` + `df_locales` → `no_alc_pct` para el overlay rojo en los tanques
 - `df_rec["FechaObservacion"]` → `_cerrados_set()` para 🔒
 
-**Función:** Grilla de tarjetas por chofer, cada una con 2 o 3 tanques compactos (Litros + Locales; Alta solo si hay locales de alta prioridad). Ordenadas por `data_comp["Pct"]` descendente.  
+**Función:** Grilla de tarjetas por chofer, cada una con 2 o 3 tanques compactos (Litros + Locales; Alta solo si hay locales de alta prioridad). Bajo el nombre muestra la ruta (`data_comp["Ruta"]`, desde el sheet) si existe. Ordenadas por `data_comp["Pct"]` descendente.  
 **Estilos:** card `border 1px solid #c8e6c9 / br 7px / padding 5px 6px 4px / shadow 0 1px 4px rgba(0,0,0,0.04) / margin 2px`; fondo cerrado `#f0f4f0` / abierto `#f9fdf9`; nombre `14px/700/#1a472a`; tanques `flex / gap 5px`.
 
 ---
@@ -316,7 +318,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `cargar_datos_regiones()` columna PROM → promedio por zona para centros de Regiones
 - `df_rec["Litros"]` agrupado por `CentroAcopio` (mapeado desde `df_locales`) → litros reales por centro
 
-**Función:** Una tarjeta por centro de acopio (zona) con dos tanques en modo normal (Litros y Locales).  
+**Función:** Una tarjeta por centro de acopio (zona) con dos tanques en modo normal (Litros y Locales). La agregación de datos vive en `_datos_centros()` (`helpers/data_prep.py`), compartida con la versión nativa de Global v2 (`_card_centro()` en `tab_v2.py`).  
 **Estilos:** card `border 1px solid #c8e6c9 / br 10px / padding 12px 12px 10px / bg #f9fdf9 / shadow 0 1px 6px rgba(0,0,0,0.05)`; nombre `12px/700/#1a472a`; tanques `flex / gap 10px`.
 
 ---
@@ -353,16 +355,10 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 
 ---
 
-## 24. Razones de fallo
-**Archivo:** `components/tabs/tab_carrusel.py` (función `_razones_fallo()`)  
-**Firma:** `_razones_fallo(df_c)`  
-**Dataframes:**
-- `df_c["Razon"]` filtrado a no nulos, deduplicado por `idLocalSistema`
-- `cargar_razones()` → mapa ID → nombre de razón
-- Agrupa por `NombreRazon`, cuenta occurrencias, ordena descendente
-
-**Función:** Lista de razones de fallo del chofer activo con barra proporcional y conteo. Si no hay fallos muestra "Sin fallos hoy".  
-**Estilos:** contenedor `white / border 1px solid #e8e8e8 / br 8px / padding 10px 12px`; barra `h 4px / relleno #e74c3c`; conteo `12px/700/#e74c3c`.
+## 24. Razones de fallo — ELIMINADO
+**Eliminado en el refactor 2026-06.** `_razones_fallo()` era código muerto: estaba definida
+pero ningún tab la llamaba (el desglose de razones se ve en la leyenda del donut #17).
+Recuperable desde el historial de git.
 
 ---
 
@@ -395,7 +391,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `df_locales["Estado"]` y `df_rec["Razon"] == 11` → `pct_loc = _pct(realizados - no_alc, total)`
 - `sub = f"{realizados - no_alc}/{total}"`
 
-**Función:** Caja compacta con % de locales realizados (descontando "no alc."). Usada dentro de `_card_chofer()`.  
+**Función:** Caja compacta con % de locales realizados (descontando "no alc."). Muestra la capa roja `rgba(229,57,53,0.5)` superpuesta al relleno con el % de "no alcanzamos a pasar" (igual que los tanques v1). Usada dentro de `_card_chofer()`.  
 **Estilos:** idénticos al widget #26.
 
 ---
@@ -406,7 +402,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `df_locales["Prioridad"]` filtrado a "ALTA" + `df_rec["Razon"] == 11` → `pct_alta = _pct(real_alta - no_alc_alta, total_alta)`
 - `sub = f"{real_alta - no_alc_alta}/{total_alta}"`
 
-**Función:** Caja compacta con % de locales de prioridad alta. Solo aparece en `_card_chofer()` si hay locales de alta.  
+**Función:** Caja compacta con % de locales de prioridad alta. Muestra la capa roja de "no alc." superpuesta al relleno (igual que los tanques v1). Solo aparece en `_card_chofer()` si hay locales de alta.  
 **Estilos:** idénticos al widget #26.
 
 ---
@@ -422,7 +418,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
   - `pct_loc`, `sub_loc`: de `df_locales["Estado"]` descontando `df_rec["Razon"] == 11`
   - `pct_alta`, `sub_alta`: de `df_locales["Prioridad"]` + `df_rec["Razon"] == 11`; `None` si no hay locales de alta
 
-**Función:** Tarjeta de chofer con `st.container(border=True)`. Muestra nombre (🔒 si cerrado) y 2 o 3 mini métricas (widgets #26, #27, #28).
+**Función:** Tarjeta de chofer con `st.container(border=True)`. Muestra nombre (🔒 si cerrado), la ruta (`data_comp["Ruta"]`, desde el sheet) si existe, y 2 o 3 mini métricas (widgets #26, #27, #28).
 
 ---
 
@@ -517,8 +513,8 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `df_rec` — todas las recolecciones
 - `data_comp_todos` — comparativa Santiago + Regiones concatenadas
 
-**Dataframes cargados internamente:** `cargar_estado_locales()`, `cargar_emergencias()`, `cargar_razones()` (la columna `Producto` ya viene resuelta por `resolver_recolecciones()` en app.py)  
-**Función:** Slideshow por chofer con `st.pills` + toggle auto-avance (10 seg). Para el chofer activo renderiza: banner con Tanques Litros/Locales/Alta/Emergencias (widget #3–#6 vía `_tanque_b()`) → Donut Altair (#17) + Mini KPIs (#21) → Top5+ (#22) + Top5- (#23) + Productos (#25) + Razones (#24).
+**Dataframes cargados internamente:** vía `datos_chofer()` en `helpers/carrusel_data.py` (lógica de datos compartida con Carrusel v2): `cargar_estado_locales()`, `cargar_razones()`. La columna `Producto` ya viene resuelta por `resolver_recolecciones()` en app.py.  
+**Función:** Slideshow por chofer con `st.pills` + toggle auto-avance (10 seg). Para el chofer activo renderiza: banner con Tanques Litros/Locales/Alta (widgets #3–#5 vía `_tanque_b()`, misma lógica que las cards de choferes) → Donut Altair (#17) + Mini KPIs (#21) → Top5+ (#22) + Top5- (#23) + Productos (#25).
 
 ---
 
@@ -546,8 +542,8 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `df_sheets` — tabla de columnas y diagnóstico Patente→Chofer
 - `df_regiones["Zona"]` — tabla del mapa de zonas
 
-**Carga internamente:** `cargar_usuarios_vehiculos()`, `cargar_vehiculos()`, `cargar_empleados()` (dentro del expander de diagnóstico)  
-**Función:** Muestra 2 Semáforos (#32) → 4 `st.metric` operacionales → tabla mapa de zonas → tablas de columnas de sheets → expander diagnóstico Patente→Chofer → expander configuración activa.
+**Carga internamente:** `cargar_usuarios_vehiculos()`, `cargar_vehiculos()`, `cargar_empleados()`  
+**Función:** Rediseñado en el refactor 2026-06 como **diagnóstico de cruces con Google Sheets**: métricas resumen (filas por sheet, choferes por zona) → **Match Santiago** por patente (tabla sheet PATENTE → vehículo PG → chofer MySQL → nombre PG, con ✅/❌, métricas de sin-match y alerta de patentes con litros fuera del sheet) → **Match Regiones** por nombre (tabla de la comparativa con estado: ✅ match / ⚠️ en sheet sin litros / ❌ con litros sin sheet; expander mapa de zonas con filas sin zona). Lo demás quedó en expanders: columnas leídas de los sheets, constantes del sistema (semáforos #32 + métricas) y configuración activa.
 
 ---
 
@@ -565,13 +561,14 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 
 ## 42. Tab Global v2
 **Archivo:** `components/tabs/tab_v2.py`  
-**Llamada desde app.py:** `mostrar_tab_v2(df_rec, choferes_filter=choferes_todos, data_comp=data_comp_todos, tab_nombre="Global")`  
+**Llamada desde app.py:** `mostrar_tab_v2(df_rec, choferes_filter=choferes_todos, data_comp=data_comp_todos, tab_nombre="Global", data_comp_centros=_dc_stgo)`  
 **Dataframes:**
 - `df_rec` — todas las recolecciones
-- `data_comp_todos` — comparativa Santiago + Regiones
+- `data_comp_todos` — comparativa Santiago + Regiones (para los donuts KPI)
+- `data_comp_centros=_dc_stgo` — comparativa Santiago, usada solo por las cards de centros (el override del centro Santiago no debe incluir litros de Regiones)
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_todos`
 
-**Función:** Idéntica al Tab Santiago v2 pero con datos de todos los choferes.
+**Función:** Espejo nativo del Tab Global v1: 5 Donuts Plotly (#12–#16) + cards de **centros de acopio** (`_card_centro()`, espejo v2 del widget #20, con `st.container(border=True)` y mini métricas Litros/Locales). La agregación por centro es compartida con v1 (`_datos_centros()` en `helpers/data_prep.py`). No muestra cards de choferes.
 
 ---
 
@@ -583,7 +580,22 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 - `_dc_reg = _preparar_datos_regiones(df_regiones, df_rec_reg)` — comparativa Regiones
 - `df_locales = cargar_estado_locales()` filtrado por `choferes_reg`
 
-**Función:** Idéntica al Tab Santiago v2 pero con datos de choferes de Regiones y comparativa calculada por nombre (sin patente).
+**Función:** Idéntica al Tab Santiago v2 pero con datos de choferes de Regiones y comparativa calculada por nombre (sin patente). El **modo compacto** se controla con un `st.toggle` "Compacto" en el encabezado (disponible en los 3 tabs v2; encendido por defecto solo en Regiones). Compacto = espejo del modo compacto de `_donuts_global` v1: donut KPI 100px (vs 150), emoji 22px (vs 34), valor 0.95rem (vs 1.4), mini métricas 38px de alto (vs 52), nombre de chofer 13px, y CSS que reduce gaps y padding de los containers.
+
+---
+
+## 44. Tab Carrusel v2
+**Archivo:** `components/tabs/tab_carrusel_v2.py` — decorado con `@st.fragment`  
+**Llamada desde app.py:** `mostrar_carrusel_v2(df_rec, data_comp=data_comp_todos)`  
+**Dataframes:** los mismos del Carrusel v1 — toda la lógica de datos sale de `datos_chofer()` en `helpers/carrusel_data.py` (compartida con v1; los tabs solo renderizan).  
+**Función:** Espejo nativo del Tab Carrusel (#37): selector `st.pills` + toggle Auto (10 seg, keys `carrusel2_*` independientes de v1) → banner con `st.container(border=True)`: nombre del chofer (`st.subheader`) + ruta (`st.caption`) + mini métricas Litros/Locales/Alta (#26–#28, con capa roja de "no alc.") → Donut Plotly de desglose (mismos colores y segmentos que el Altair #17, hole 0.55, leyenda horizontal abajo) + 4 `st.metric` en containers (Exitosas/Fallidas/Pend. Alta/Pend. Normal) → Top 5 ± litros y Por producto como `st.dataframe` con `ProgressColumn` (barras nativas).
+
+---
+
+## 45. Tab Carrusel Zonas v2
+**Archivo:** `components/tabs/tab_carrusel_zonas_v2.py` — decorado con `@st.fragment`  
+**Llamada desde app.py:** `mostrar_carrusel_zonas_v2(df_rec, df_rec_stgo, df_rec_reg, choferes_todos, choferes_stgo, choferes_reg, data_comp_todos, _dc_stgo, _dc_reg)`  
+**Función:** Espejo v2 del Tab Carrusel Zonas (#38): cicla Global v2 (#42) → Santiago v2 (#41) → Regiones v2 (#43) con ◀/▶, puntos indicadores y auto-avance (20 seg). Las vistas internas se renderizan con `mostrar_tab_v2(..., key_prefix="czv2_")` para no colisionar keys de widgets con los tabs v2 directos. Keys de estado `czv2_*`.
 
 ---
 
@@ -596,7 +608,7 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 | 3 | Tanque Litros | `data_comp["LitrosHoy"]`, `data_comp["Prom"]` | — |
 | 4 | Tanque Locales | `df_locales["Estado"]`, `df_rec["Razon"]` | — |
 | 5 | Tanque Alta | `df_locales["Prioridad"]`, `df_rec["Razon"]` | — |
-| 6 | Tanque Emergencias | `df_emerg_all`, `df_c["Emergencia"]` | — |
+| 6 | ~~Tanque Emergencias~~ (eliminado) | — | — |
 | 7 | Donut CSS Litros | `df_rec["Litros"]`, `data_comp["Prom"]` | `cargar_datos_regiones()` |
 | 8 | Donut CSS Locales | `df_locales["Estado"]`, `df_rec["Razon"]` | — |
 | 9 | Donut CSS Alta | `df_locales["Prioridad"]`, `df_rec["Razon"]` | — |
@@ -632,5 +644,12 @@ Si se necesita de nuevo, recuperarlo desde el historial de git.
 | 39 | Tab Recolecciones | `df_rec` | vía sub-widgets |
 | 40 | Tab Parametros | `df_rec`, `df_sheets`, `df_regiones` | `cargar_usuarios_vehiculos()`, `cargar_vehiculos()`, `cargar_empleados()` |
 | 41 | Tab Santiago v2 | `df_rec_stgo`, `_dc_stgo` | `cargar_estado_locales()` |
-| 42 | Tab Global v2 | `df_rec`, `data_comp_todos` | `cargar_estado_locales()` |
+| 42 | Tab Global v2 | `df_rec`, `data_comp_todos`, `_dc_stgo` (centros) | `cargar_estado_locales()`, `cargar_datos_regiones()` |
 | 43 | Tab Regiones v2 | `df_rec_reg`, `_dc_reg` | `cargar_estado_locales()` |
+| 44 | Tab Carrusel v2 | `df_rec`, `data_comp_todos` | vía `datos_chofer()` (`carrusel_data.py`) |
+| 45 | Tab Carrusel Zonas v2 | `df_rec`, `df_rec_stgo`, `df_rec_reg`, `data_comp_todos`, `_dc_stgo`, `_dc_reg` | vía `mostrar_tab_v2()` |
+| 46 | Tab Santiago v3 | `df_rec_stgo`, `_dc_stgo` | `cargar_estado_locales()` |
+| 47 | Tab Global v3 | `df_rec`, `data_comp_todos`, `_dc_stgo` (centros) | `cargar_estado_locales()` |
+| 48 | Tab Regiones v3 | `df_rec_reg`, `_dc_reg` | `cargar_estado_locales()` |
+| 49 | Tab Carrusel v3 | `df_rec`, `data_comp_todos` | vía `datos_chofer()` (`carrusel_data.py`) |
+| 50 | Tab Carrusel Zonas v3 | `df_rec`, `df_rec_stgo`, `df_rec_reg`, `data_comp_todos`, `_dc_stgo`, `_dc_reg` | vía `mostrar_tab_v2()` |

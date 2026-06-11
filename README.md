@@ -20,7 +20,7 @@ autenticación propia.
 
 | Fuente | Qué entrega | TTL caché |
 |---|---|---|
-| MySQL (`appsheet_db`) | `VistaMonitor` (recolecciones del día), `LocalesRuta`, `Emergencias`, `Usuarios` | 1–60 min |
+| MySQL (`appsheet_db`) | `VistaMonitor` (recolecciones del día), `LocalesRuta`, `Emergencias`, `Usuarios` | 5–60 min |
 | PostgreSQL (`rendering_db2`) | Empleados, productos, vehículos, razones de fallo (catálogos) | 1 h |
 | Google Sheets | Promedios esperados 3M: hoja Santiago y hoja Control Regiones | 5 min |
 

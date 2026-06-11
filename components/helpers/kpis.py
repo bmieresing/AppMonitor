@@ -9,25 +9,41 @@ from components.helpers.data_prep import _litros, _pct, _cerrados_set
 RAZON_NO_ALC = 11
 
 
-def exitosas_fallidas(df_rec: pd.DataFrame) -> tuple[int, int]:
-    """Cuenta por local único: exitosa si la suma de litros del local > 0;
+def desglose_recolecciones(df_rec: pd.DataFrame) -> tuple[int, int, int]:
+    """Cuenta por local único: (exitosas, fallidas por "no alcanzamos a pasar",
+    fallidas por otras razones). Exitosa si la suma de litros del local > 0;
     fallida si tiene razón de fallo y no juntó litros. Mutuamente excluyentes,
     e inmune al orden de las filas por producto de VistaMonitor."""
     if df_rec.empty or "Litros" not in df_rec.columns:
-        return 0, 0
+        return 0, 0, 0
     tiene_razon = (
         df_rec["Razon"].notna() if "Razon" in df_rec.columns
+        else pd.Series(False, index=df_rec.index)
+    )
+    es_no_alc = (
+        (df_rec["Razon"] == RAZON_NO_ALC) if "Razon" in df_rec.columns
         else pd.Series(False, index=df_rec.index)
     )
     if "idLocalSistema" in df_rec.columns:
         litros_loc = df_rec.groupby("idLocalSistema")["Litros"].sum()
         razon_loc = tiene_razon.groupby(df_rec["idLocalSistema"]).any()
+        noalc_loc = es_no_alc.groupby(df_rec["idLocalSistema"]).any()
         exitosas = int((litros_loc > 0).sum())
-        fallidas = int((razon_loc & (litros_loc <= 0)).sum())
+        fallidas_mask = razon_loc & (litros_loc <= 0)
+        fall_no_alc = int((fallidas_mask & noalc_loc).sum())
+        fall_otras = int((fallidas_mask & ~noalc_loc).sum())
     else:
         exitosas = int((df_rec["Litros"] > 0).sum())
-        fallidas = int((tiene_razon & (df_rec["Litros"] <= 0)).sum())
-    return exitosas, fallidas
+        fallidas_mask = tiene_razon & (df_rec["Litros"] <= 0)
+        fall_no_alc = int((fallidas_mask & es_no_alc).sum())
+        fall_otras = int((fallidas_mask & ~es_no_alc).sum())
+    return exitosas, fall_no_alc, fall_otras
+
+
+def exitosas_fallidas(df_rec: pd.DataFrame) -> tuple[int, int]:
+    """(exitosas, fallidas) — ver desglose_recolecciones()."""
+    exitosas, fall_no_alc, fall_otras = desglose_recolecciones(df_rec)
+    return exitosas, fall_no_alc + fall_otras
 
 
 def no_alcanzados(df_rec: pd.DataFrame, df_locales: pd.DataFrame) -> tuple[int, int]:
@@ -57,7 +73,8 @@ def calcular_kpis(
     cerradas = len(_cerrados_set(df_rec))
 
     no_alc_loc, no_alc_alta = no_alcanzados(df_rec, df_locales)
-    exitosas, fallidas = exitosas_fallidas(df_rec)
+    exitosas, fallidas_no_alc, fallidas_otras = desglose_recolecciones(df_rec)
+    fallidas = fallidas_no_alc + fallidas_otras
 
     df_lit = _litros(df_rec)
     litros = df_lit["Litros"].sum() if not df_lit.empty else 0
@@ -84,7 +101,7 @@ def calcular_kpis(
         pct_loc=_pct(exitosos_loc, total_loc), no_alc_loc=no_alc_loc,
         exitosos_alta=exitosos_alta, total_alta=total_alta,
         pct_alta=_pct(exitosos_alta, total_alta), no_alc_alta=no_alc_alta,
-        exitosas=exitosas, fallidas=fallidas,
+        exitosas=exitosas, fallidas=fallidas, fallidas_no_alc=fallidas_no_alc,
         pct_exit=_pct(exitosas, exitosas + fallidas),
         cerradas=cerradas, n_rutas=n_rutas,
         pct_cerradas=_pct(cerradas, n_rutas),

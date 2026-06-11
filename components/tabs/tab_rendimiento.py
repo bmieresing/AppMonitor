@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from connectors.postgres import cargar_razones
+from config import UMBRAL_VERDE, UMBRAL_AMARILLO
 
 
 def mostrar_rendimiento(df_rec: pd.DataFrame):
@@ -74,13 +75,26 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         range=["#28a745", "#dc3545"]
     )
 
+    # % de exitosas por chofer, visible al final de cada barra con color semáforo
+    pct_lbl = total.merge(
+        stats[stats["Resultado"] == "Exitosa"][["NombreChofer", "Pct"]],
+        on="NombreChofer", how="left",
+    ).fillna({"Pct": 0})
+    pct_lbl["PctTxt"] = pct_lbl["Pct"].round(0).astype(int).astype(str) + "%"
+    pct_lbl["Color"] = pct_lbl["Pct"].apply(
+        lambda p: "#2d7a2d" if p >= UMBRAL_VERDE
+        else "#e67e22" if p >= UMBRAL_AMARILLO else "#c0392b"
+    )
+    max_total = int(total["Total"].max()) if not total.empty else 1
+
     barras = (
         alt.Chart(stats)
         .mark_bar()
         .encode(
             y=alt.Y("NombreChofer:N", sort=orden, title=None,
                     axis=alt.Axis(labelFontSize=11)),
-            x=alt.X("N:Q", stack="zero", title="Visitas"),
+            x=alt.X("N:Q", stack="zero", title="Visitas",
+                    scale=alt.Scale(domain=[0, max_total * 1.14])),
             color=alt.Color("Resultado:N", scale=col_scale,
                             legend=alt.Legend(title=None, orient="top")),
             tooltip=[
@@ -94,7 +108,9 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
 
     etiquetas = (
         alt.Chart(stats[stats["N"] > 2])
-        .mark_text(fontSize=10, fontWeight="bold", color="white")
+        # align right + dx negativo: el número queda DENTRO de su segmento,
+        # no montado sobre el borde con el segmento siguiente
+        .mark_text(fontSize=10, fontWeight="bold", color="white", align="right", dx=-5)
         .encode(
             y=alt.Y("NombreChofer:N", sort=orden),
             x=alt.X("N:Q", stack="zero"),
@@ -103,8 +119,24 @@ def mostrar_rendimiento(df_rec: pd.DataFrame):
         )
     )
 
+    etiq_pct = (
+        alt.Chart(pct_lbl)
+        .mark_text(align="left", dx=6, fontSize=12, fontWeight="bold")
+        .encode(
+            y=alt.Y("NombreChofer:N", sort=orden),
+            x=alt.X("Total:Q"),
+            text="PctTxt:N",
+            color=alt.Color("Color:N", scale=None),
+            tooltip=[
+                alt.Tooltip("NombreChofer:N", title="Chofer"),
+                alt.Tooltip("Pct:Q", title="% Exitosas", format=".1f"),
+            ],
+        )
+    )
+
     chart = (
-        (barras + etiquetas)
+        (barras + etiquetas + etiq_pct)
+        .resolve_scale(color="independent")
         .properties(
             title=alt.TitleParams(
                 "EFECTIVIDAD POR CHOFER — EXITOSAS VS FALLIDAS (%)",

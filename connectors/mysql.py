@@ -40,15 +40,25 @@ def _query(sql: str, params: tuple = ()) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def cargar_recolecciones() -> pd.DataFrame:
-    df = _query("SELECT * FROM VistaMonitor WHERE Fecha = %s", (_hoy(),))
+    # Solo las columnas que la app consume: la vista tiene ~24 y el resto
+    # (observaciones, whatsapp, comuna, etc.) viajaba desde RDS sin usarse.
+    # Si un widget nuevo necesita otra columna, agregarla acá.
+    df = _query(
+        "SELECT Litros, Razon, Chofer, Patente, idProducto, "
+        "idLocalSistema, Local, FechaObservacion "
+        "FROM VistaMonitor WHERE Fecha = %s",
+        (_hoy(),),
+    )
     if not df.empty:
         df["Litros"] = pd.to_numeric(df["Litros"], errors="coerce").fillna(0)
     return df
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def cargar_estado_locales() -> pd.DataFrame:
-    """Todos los locales de las rutas activas hoy con su Estado actual."""
+    """Todos los locales de las rutas activas hoy con su Estado actual.
+    TTL alineado al ciclo de 5 min del dashboard: con 60s, cambiar de tab
+    tras un minuto refrescaba estos datos fuera del ciclo."""
     return _query("""
         SELECT lr.Ruta AS NombreRuta, lr.ID_Local, lr.Local, lr.Estado,
                lr.Prioridad, lr.CentroAcopio, u.Chofer
@@ -72,3 +82,10 @@ def cargar_emergencias() -> pd.DataFrame:
 def cargar_usuarios_vehiculos() -> pd.DataFrame:
     """Vehiculo (ID) y Chofer (ID) desde Usuarios — para resolver Patente → Chofer sin depender de visitas."""
     return _query("SELECT Vehiculo, Chofer FROM Usuarios WHERE Vehiculo IS NOT NULL AND Chofer IS NOT NULL")
+
+
+@st.cache_data(ttl=3600)
+def cargar_choferes_usuarios() -> pd.DataFrame:
+    """Todos los IDs de chofer registrados en Usuarios (AppSheet), tengan o no
+    vehículo asignado — para diagnosticar si un chofer falta por ingresar."""
+    return _query("SELECT DISTINCT Chofer FROM Usuarios WHERE Chofer IS NOT NULL")

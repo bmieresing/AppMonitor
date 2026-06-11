@@ -3,7 +3,9 @@ from connectors.postgres import cargar_empleados, cargar_vehiculos, cargar_produ
 
 
 def _resolver_nombre(df: pd.DataFrame, col_id: str, lookup: pd.DataFrame, col_nuevo: str) -> pd.DataFrame:
-    if lookup.empty or col_id not in df.columns:
+    if col_id not in df.columns:
+        return df
+    if lookup.empty:
         df[col_nuevo] = df[col_id].astype(str)
         return df
     mapa = lookup.set_index("id")["nombre"]
@@ -19,8 +21,6 @@ def resolver_recolecciones(df: pd.DataFrame) -> pd.DataFrame:
     vehiculos = cargar_vehiculos().rename(columns={"plate": "nombre"})
     productos = cargar_productos().rename(columns={"name": "nombre"})
     df = _resolver_nombre(df, "Chofer", empleados, "NombreChofer")
-    df = _resolver_nombre(df, "Peoneta1", empleados, "NombrePeoneta1")
-    df = _resolver_nombre(df, "Peoneta2", empleados, "NombrePeoneta2")
     df = _resolver_nombre(df, "Patente", vehiculos, "Patente_Real")
     df = _resolver_nombre(df, "idProducto", productos, "Producto")
     # VistaMonitor tiene 1 fila por producto por visita y puede duplicar filas

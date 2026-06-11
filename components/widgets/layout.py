@@ -33,41 +33,53 @@ def _css():
 
 
 def _header(tab_nombre: str = "", key_prefix: str = ""):
+    """Banner verde como container nativo (clase .st-key-*): el botón ↺ vive
+    dentro del banner, en el lugar que ocupaba el badge EN VIVO."""
     ahora = datetime.now(TZ)
     badge = (f'<span style="background:rgba(255,255,255,0.18);padding:3px 14px;'
              f'border-radius:12px;font-size:18px;font-weight:700;letter-spacing:2px;'
              f'margin-left:16px">{tab_nombre.upper()}</span>') if tab_nombre else ""
 
-    col_banner, col_btn = st.columns([11, 1])
-    with col_banner:
-        st.markdown(f"""
-        <div style="background:{C_VERDE_OSC};color:white;padding:8px 20px;border-radius:6px;
-                    display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:16px;font-weight:700;letter-spacing:1px">
-                DASHBOARD OPERACIONAL &ndash; RECOLECCIÓN DE ACEITE{badge}
-            </span>
-            <div style="text-align:right;font-size:12px;line-height:1.6">
-                Última actualización: {ahora.strftime('%d/%m/%Y %H:%M')}<br>
-                <span style="background:#28a745;padding:2px 10px;border-radius:12px;font-weight:bold">
-                    ● EN VIVO
-                </span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col_btn:
-        st.markdown(f"""
-        <style>
-          div[data-testid="column"]:last-child button[kind="secondary"] {{
-            background:{C_VERDE_OSC} !important;
-            color:white !important;
-            border:1px solid rgba(255,255,255,0.35) !important;
-            font-weight:600 !important;
-          }}
-        </style>
-        """, unsafe_allow_html=True)
-        if st.button("↺ Actualizar", width='stretch',
-                     key=f"hdr_refresh_{key_prefix}{tab_nombre or 'main'}",
-                     help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
-            st.cache_data.clear()
-            st.rerun()
+    ckey = f"hdr_{key_prefix}{tab_nombre or 'main'}".replace(" ", "_")
+    st.markdown(f"""
+    <style>
+        .st-key-{ckey} {{
+            background: {C_VERDE_OSC};
+            border-radius: 6px;
+            padding: 8px 20px;
+        }}
+        .st-key-{ckey} button {{
+            background: rgba(255,255,255,0.12) !important;
+            color: white !important;
+            border: 1px solid rgba(255,255,255,0.35) !important;
+            font-weight: 600 !important;
+            min-height: 26px !important;
+            height: 26px !important;
+            padding: 0 9px !important;
+            font-size: 13px !important;
+        }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    with st.container(key=ckey):
+        # Botón chico pegado a la fecha (gap small + columna angosta)
+        c_tit, c_ts, c_btn = st.columns([9.3, 2.2, 0.5], vertical_alignment="center", gap="small")
+        with c_tit:
+            st.markdown(
+                f'<span style="font-size:16px;font-weight:700;letter-spacing:1px;color:white">'
+                f'DASHBOARD OPERACIONAL &ndash; RECOLECCIÓN DE ACEITE{badge}</span>',
+                unsafe_allow_html=True,
+            )
+        with c_ts:
+            st.markdown(
+                f'<div style="text-align:right;font-size:12px;color:rgba(255,255,255,0.85);'
+                f'line-height:1.4">Última actualización<br>{ahora.strftime("%d/%m/%Y %H:%M")}</div>',
+                unsafe_allow_html=True,
+            )
+        with c_btn:
+            if st.button("↺",
+                         key=f"hdr_refresh_{key_prefix}{tab_nombre or 'main'}",
+                         help="Recarga todos los datos desde MySQL, PostgreSQL y Google Sheets"):
+                st.cache_data.clear()
+                st.rerun()
     st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)

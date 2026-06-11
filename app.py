@@ -12,7 +12,9 @@ from components.tabs.tab_global import mostrar_dashboard
 from components.tabs.tab_zonas import mostrar_cards_choferes
 from components.tabs.tab_rendimiento import mostrar_rendimiento
 from components.tabs.tab_carrusel import mostrar_carrusel
+from components.tabs.tab_carrusel_v2 import mostrar_carrusel_v2
 from components.tabs.tab_carrusel_zonas import mostrar_carrusel_zonas
+from components.tabs.tab_carrusel_zonas_v2 import mostrar_carrusel_zonas_v2
 from components.tabs.tab_recolecciones import mostrar_tab_recolecciones
 from components.tabs.tab_parametros import mostrar_parametros
 from components.tabs.tab_v2 import mostrar_tab_v2
@@ -57,18 +59,38 @@ _dc_stgo = _dc_stgo if _dc_stgo is not None else pd.DataFrame()
 _dc_reg  = _dc_reg  if _dc_reg  is not None else pd.DataFrame()
 data_comp_todos = pd.concat([_dc_stgo, _dc_reg], ignore_index=True) if not (_dc_stgo.empty and _dc_reg.empty) else pd.DataFrame()
 
+# El grupo v2 va después de Parametros, en el mismo orden que los originales
 VISTAS = [
     "Global", "Santiago", "Regiones", "Recolecciones", "Rendimiento",
-    "Carrusel", "Carrusel Zonas", "Parametros", "Santiago v2", "Global v2", "Regiones v2",
+    "Carrusel", "Carrusel Zonas", "Parametros",
+    "Global v2", "Santiago v2", "Regiones v2", "Carrusel v2", "Carrusel Zonas v2",
+    "Global v3", "Santiago v3", "Regiones v3", "Carrusel v3", "Carrusel Zonas v3",
 ]
 
-# Navegación desde card de chofer (link ?nav_carrusel=Nombre)
-_nav_target = st.query_params.get("nav_carrusel", "")
-if _nav_target:
+# Navegación desde card de chofer (?nav_carrusel=Nombre → Carrusel v1;
+# ?nav_carrusel_v2 → Carrusel v2; ?nav_carrusel_v3 → Carrusel v3)
+_nav_v1 = st.query_params.get("nav_carrusel", "")
+_nav_v2 = st.query_params.get("nav_carrusel_v2", "")
+_nav_v3 = st.query_params.get("nav_carrusel_v3", "")
+if _nav_v1 or _nav_v2 or _nav_v3:
     _ch_sorted = sorted(df_rec["NombreChofer"].dropna().unique().tolist()) if not df_rec.empty and "NombreChofer" in df_rec.columns else []
-    if _nav_target in _ch_sorted:
-        st.session_state.carrusel_idx = _ch_sorted.index(_nav_target)
-    st.session_state.nav_vista = "Carrusel"
+    _target = _nav_v3 or _nav_v2 or _nav_v1
+    if _nav_v3:
+        if _target in _ch_sorted:
+            st.session_state.carrusel3_idx = _ch_sorted.index(_target)
+            # Limpiar la selección previa de pills para que tome el nuevo índice
+            st.session_state.pop("carrusel3_slicer", None)
+        st.session_state.nav_vista = "Carrusel v3"
+    elif _nav_v2:
+        if _target in _ch_sorted:
+            st.session_state.carrusel2_idx = _ch_sorted.index(_target)
+            st.session_state.pop("carrusel2_slicer", None)
+        st.session_state.nav_vista = "Carrusel v2"
+    else:
+        if _target in _ch_sorted:
+            st.session_state.carrusel_idx = _ch_sorted.index(_target)
+            st.session_state.pop("slicer_chofer", None)
+        st.session_state.nav_vista = "Carrusel"
     st.query_params.clear()
     st.rerun()
 
@@ -111,8 +133,8 @@ elif vista == "Carrusel":
     mostrar_carrusel(df_rec, data_comp=data_comp_todos)
 
 elif vista == "Carrusel Zonas":
+    # Sin _header propio: cada vista interna (Global/Santiago/Regiones) ya trae el suyo
     _css()
-    _header("Carrusel Zonas")
     mostrar_carrusel_zonas(df_sheets, df_rec, df_rec_stgo, df_rec_reg, df_regiones,
                            choferes_todos, choferes_stgo, choferes_reg,
                            data_comp_stgo=_dc_stgo, data_comp_reg=_dc_reg)
@@ -120,16 +142,54 @@ elif vista == "Carrusel Zonas":
 elif vista == "Parametros":
     _css()
     _header("Parametros")
-    mostrar_parametros(df_rec, df_sheets, df_regiones, choferes_stgo, choferes_reg)
+    mostrar_parametros(df_rec, df_sheets, df_regiones, choferes_stgo, choferes_reg,
+                       data_comp_reg=_dc_reg)
 
 elif vista == "Santiago v2":
     mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo,
                    data_comp=_dc_stgo, tab_nombre="Santiago")
 
 elif vista == "Global v2":
+    # data_comp_centros=_dc_stgo: el override de litros/prom del centro Santiago
+    # debe salir de la comparativa de Santiago, no de la global
     mostrar_tab_v2(df_rec, choferes_filter=choferes_todos,
-                   data_comp=data_comp_todos, tab_nombre="Global")
+                   data_comp=data_comp_todos, tab_nombre="Global",
+                   data_comp_centros=_dc_stgo)
 
 elif vista == "Regiones v2":
     mostrar_tab_v2(df_rec_reg, choferes_filter=choferes_reg,
                    data_comp=_dc_reg, tab_nombre="Regiones")
+
+elif vista == "Carrusel v2":
+    mostrar_carrusel_v2(df_rec, data_comp=data_comp_todos)
+
+# Grupo v3: igual a v2 pero con el emoji a la izquierda de la dona (estilo v1)
+elif vista == "Global v3":
+    mostrar_tab_v2(df_rec, choferes_filter=choferes_todos,
+                   data_comp=data_comp_todos, tab_nombre="Global",
+                   data_comp_centros=_dc_stgo,
+                   key_prefix="v3_", emoji_lado=True)
+
+elif vista == "Santiago v3":
+    mostrar_tab_v2(df_rec_stgo, choferes_filter=choferes_stgo,
+                   data_comp=_dc_stgo, tab_nombre="Santiago",
+                   key_prefix="v3_", emoji_lado=True)
+
+elif vista == "Regiones v3":
+    mostrar_tab_v2(df_rec_reg, choferes_filter=choferes_reg,
+                   data_comp=_dc_reg, tab_nombre="Regiones",
+                   key_prefix="v3_", emoji_lado=True)
+
+elif vista == "Carrusel v3":
+    mostrar_carrusel_v2(df_rec, data_comp=data_comp_todos, keys_ns="carrusel3")
+
+elif vista == "Carrusel Zonas v3":
+    mostrar_carrusel_zonas_v2(df_rec, df_rec_stgo, df_rec_reg,
+                              choferes_todos, choferes_stgo, choferes_reg,
+                              data_comp_todos, _dc_stgo, _dc_reg,
+                              keys_ns="czv3", emoji_lado=True)
+
+elif vista == "Carrusel Zonas v2":
+    mostrar_carrusel_zonas_v2(df_rec, df_rec_stgo, df_rec_reg,
+                              choferes_todos, choferes_stgo, choferes_reg,
+                              data_comp_todos, _dc_stgo, _dc_reg)

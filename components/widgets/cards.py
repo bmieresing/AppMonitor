@@ -1,9 +1,7 @@
 import urllib.parse
 import streamlit as st
 import pandas as pd
-from connectors.mysql import cargar_estado_locales
-from connectors.sheets import cargar_datos_regiones
-from components.helpers.data_prep import _mapa_empleados, _cerrados_set, _litros, _pct
+from components.helpers.data_prep import _mapa_empleados, _cerrados_set, _datos_centros, _pct
 from components.widgets.tanque import _tanque, C_VERDE_OSC
 
 
@@ -79,6 +77,14 @@ def _cards_choferes_tanque(
         bg = "#f0f4f0" if cerrado else "#f9fdf9"
         sub_lit = f"{int(litros_hoy):,} / {int(prom):,} L"
 
+        ruta = fila.get("Ruta")
+        ruta = str(ruta).strip() if pd.notna(ruta) and str(ruta).strip() else ""
+        # En la misma línea del nombre para no aumentar el alto de la card
+        ruta_html = (
+            f'<span style="font-weight:400;font-size:12px;color:#777;margin-left:5px">'
+            f'🗺️ {ruta}</span>'
+        ) if ruta else ""
+
         t_lit = _tanque(pct_lit, "💧", "Litros", sub_lit, compact=True)
         t_loc = _tanque(pct_loc, "🏪", "Locales", sub_loc, compact=True, no_alc_pct=no_alc_pct_loc)
         t_alt = _tanque(pct_alta, "⭐", "Alta", sub_alta, compact=True, no_alc_pct=no_alc_pct_alta) if sub_alta != "—" else ""
@@ -90,7 +96,7 @@ def _cards_choferes_tanque(
             <div style="font-weight:700;font-size:14px;color:{C_VERDE_OSC};margin-bottom:4px;
                         white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
                         border-bottom:1px solid #e0f0e0;padding-bottom:3px"
-                 title="{nombre}">{candado}<a href="?nav_carrusel={urllib.parse.quote(nombre)}" style="text-decoration:none;color:{C_VERDE_OSC}">{nombre}</a></div>
+                 title="{nombre} — {ruta}">{candado}<a href="?nav_carrusel={urllib.parse.quote(nombre)}" style="text-decoration:none;color:{C_VERDE_OSC}">{nombre}</a>{ruta_html}</div>
             {tanques}
         </div>""")
 
@@ -101,62 +107,18 @@ def _cards_choferes_tanque(
 
 
 def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales: pd.DataFrame):
-    df_rec = _litros(df_rec)
-
-    df_reg = cargar_datos_regiones()
-    prom_zona: dict = {}
-    if not df_reg.empty and "Zona" in df_reg.columns:
-        col_prom = next((c for c in df_reg.columns if "PROM" in c.upper()), None)
-        if col_prom:
-            for zona, grp in df_reg[df_reg["Zona"].notna()].groupby("Zona"):
-                prom_zona[zona] = grp[col_prom].sum()
-
-    litros_zona: dict = {}
-    if not df_rec.empty and not df_locales.empty and "CentroAcopio" in df_locales.columns and "Chofer" in df_locales.columns:
-        chofer_centro = df_locales.drop_duplicates("Chofer").set_index("Chofer")["CentroAcopio"]
-        df_tmp = df_rec.copy()
-        df_tmp["CentroAcopio"] = df_tmp["Chofer"].map(chofer_centro)
-        litros_zona = df_tmp.groupby("CentroAcopio")["Litros"].sum().to_dict()
-
-    if not data_comp.empty and "LitrosHoy" in data_comp.columns:
-        stgo_litros = data_comp["LitrosHoy"].sum()
-        stgo_prom = data_comp["Prom"].sum() if "Prom" in data_comp.columns else 0
-        stgo_centros = set()
-        if not df_locales.empty and "CentroAcopio" in df_locales.columns:
-            stgo_centros = {c for c in df_locales["CentroAcopio"].dropna().unique()
-                            if "santiago" in str(c).lower()}
-        for c in stgo_centros | {k for k in prom_zona if "santiago" in str(k).lower()}:
-            litros_zona[c] = stgo_litros
-            if stgo_prom > 0:
-                prom_zona[c] = stgo_prom
-
-    local_stats = pd.DataFrame()
-    if not df_locales.empty and "CentroAcopio" in df_locales.columns:
-        local_stats = (
-            df_locales.groupby("CentroAcopio")
-            .agg(Total=("ID_Local", "count"),
-                 Realizados=("Estado", lambda x: (x == "Realizado").sum()))
-            .reset_index()
-        )
-
-    centros = sorted(set(list(prom_zona.keys()) + (local_stats["CentroAcopio"].tolist() if not local_stats.empty else [])))
-    centros = [c for c in centros if c and str(c) != "nan"]
+    centros = _datos_centros(df_rec, data_comp, df_locales)
     if not centros:
         return
 
     cols_por_fila = max(3, -(-len(centros) // 2))
     for i in range(0, len(centros), cols_por_fila):
         cols = st.columns(cols_por_fila)
-        for j, centro in enumerate(centros[i:i + cols_por_fila]):
-            litros = litros_zona.get(centro, 0)
-            prom = prom_zona.get(centro, 0)
-
-            fila_loc = local_stats[local_stats["CentroAcopio"] == centro] if not local_stats.empty else pd.DataFrame()
-            realizados_loc = int(fila_loc["Realizados"].iloc[0]) if not fila_loc.empty else 0
-            total_loc = int(fila_loc["Total"].iloc[0]) if not fila_loc.empty else 0
-
-            tanque_litros = _tanque(_pct(litros, prom), "💧", "Litros", f"{int(litros):,} / {int(prom):,} L")
-            tanque_locales = _tanque(_pct(realizados_loc, total_loc), "🏪", "Locales", f"{realizados_loc} / {total_loc}")
+        for j, c in enumerate(centros[i:i + cols_por_fila]):
+            tanque_litros = _tanque(_pct(c["litros"], c["prom"]), "💧", "Litros",
+                                    f"{int(c['litros']):,} / {int(c['prom']):,} L")
+            tanque_locales = _tanque(_pct(c["realizados"], c["total"]), "🏪", "Locales",
+                                     f"{c['realizados']} / {c['total']}")
 
             cols[j].markdown(f"""
             <div style="border:1px solid #c8e6c9;border-radius:10px;padding:12px 12px 10px;
@@ -164,7 +126,7 @@ def _desempeno_centros(df_rec: pd.DataFrame, data_comp: pd.DataFrame, df_locales
                 <div style="font-weight:700;font-size:12px;margin-bottom:10px;color:{C_VERDE_OSC};
                             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
                             border-bottom:1px solid #e0f0e0;padding-bottom:6px"
-                     title="{centro}">{centro}</div>
+                     title="{c['centro']}">{c['centro']}</div>
                 <div style="display:flex;gap:10px">
                     {tanque_litros}
                     {tanque_locales}

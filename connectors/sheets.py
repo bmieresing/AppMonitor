@@ -9,6 +9,16 @@ def _hoy() -> date:
 
 COLUMNAS_INTERES = ["FECHA", "RUTA", "CHOFER", "PEONETA1", "PEONETA2", "PATENTE", "PROM RUTA"]
 
+
+def _letra_col(i: int) -> str:
+    """Índice de columna (0-based) → letra de columna de Sheets (A, B, ... AA)."""
+    letras = ""
+    i += 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        letras = chr(65 + r) + letras
+    return letras
+
 @st.cache_data(ttl=300)
 def cargar_datos() -> pd.DataFrame:
     try:
@@ -22,6 +32,10 @@ def cargar_datos() -> pd.DataFrame:
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
+    # Fila real en el sheet (fila 1 = cabecera) y letra de cada columna,
+    # para poder referenciar celdas (p. ej. F14) en el tab Parámetros
+    df["_FilaSheet"] = range(2, len(df) + 2)
+    letras = {c: _letra_col(i) for i, c in enumerate(filas[0])}
     df.replace({"#N/A": None, "": None}, inplace=True)
 
     # Filtrar solo columnas de interés (por coincidencia parcial, case-insensitive)
@@ -29,7 +43,7 @@ def cargar_datos() -> pd.DataFrame:
         c for c in df.columns
         if any(k in c.upper() for k in COLUMNAS_INTERES)
     ]
-    df = df[cols_sel] if cols_sel else df
+    df = df[cols_sel + ["_FilaSheet"]] if cols_sel else df
 
     # Filtrar filas del día de hoy por columna Fecha (acepta cualquier formato parseable)
     col_fecha = next((c for c in df.columns if "FECHA" in c.upper()), None)
@@ -42,7 +56,9 @@ def cargar_datos() -> pd.DataFrame:
     if col_chofer:
         df = df[~df[col_chofer].str.contains("TOTALES", case=False, na=False)]
 
-    return df.reset_index(drop=True)
+    df = df.reset_index(drop=True)
+    df.attrs["letras_col"] = letras
+    return df
 
 
 ZONA_MAP = [
@@ -75,13 +91,16 @@ def cargar_datos_regiones() -> pd.DataFrame:
         hoja = gc.open_by_key(cfg["spreadsheet_id"]).worksheet(
             cfg.get("sheet_name_regiones", "Control Regiones")
         )
-        filas = hoja.get("A:F")
+        # A:I para incluir la columna RUTA (col I)
+        filas = hoja.get("A:I")
     except Exception as e:
         st.error(f"Sin conexión a Google Sheets (Regiones): {e}")
         return pd.DataFrame()
     if not filas or len(filas) < 2:
         return pd.DataFrame()
     df = pd.DataFrame(filas[1:], columns=filas[0])
+    df["_FilaSheet"] = range(2, len(df) + 2)
+    letras = {c: _letra_col(i) for i, c in enumerate(filas[0])}
     df.replace({"#N/A": None, "#DIV/0!": None, "": None, "-": None}, inplace=True)
 
     # Filtrar hoy
@@ -98,7 +117,7 @@ def cargar_datos_regiones() -> pd.DataFrame:
 
     # Parsear numéricos
     col_prom = next((c for c in df.columns if "PROM" in c.upper()), None)
-    col_litros = next((c for c in df.columns if "LITROS" in c.upper()), None)
+    col_litros = next((c for c in df.columns if "LITROS" in c.upper() and c != "_FilaSheet"), None)
     for col in [col_prom, col_litros]:
         if col:
             df[col] = pd.to_numeric(
@@ -106,4 +125,6 @@ def cargar_datos_regiones() -> pd.DataFrame:
                 errors="coerce",
             ).fillna(0)
 
-    return df.reset_index(drop=True)
+    df = df.reset_index(drop=True)
+    df.attrs["letras_col"] = letras
+    return df
