@@ -21,9 +21,13 @@ _CFG = {"displayModeBar": False}
 
 
 def _donut_desglose(exitosas: int, pend_alta: int, pend_normal: int,
-                    razon_counts: pd.DataFrame) -> go.Figure:
+                    razon_counts: pd.DataFrame) -> tuple[go.Figure, str]:
     """Mismo desglose que el donut Altair de v1 (exitosas, razones de fallo,
-    pendientes), renderizado con Plotly."""
+    pendientes), renderizado con Plotly. Retorna (figura, leyenda HTML): la
+    leyenda va FUERA del gráfico porque Plotly recalcula mal la posición de
+    su leyenda al redimensionar la ventana en caliente (quedaba montada sobre
+    la dona hasta el siguiente re-render completo) — el v1 usa leyenda HTML
+    y por eso nunca se rompe."""
     razones = razon_counts["NombreRazon"].tolist() if not razon_counts.empty else []
     labels = ["Exitosas"] + razones + ["Pend. Alta", "Pend. Baja/Media"]
     values = (
@@ -58,13 +62,23 @@ def _donut_desglose(exitosas: int, pend_alta: int, pend_normal: int,
         hovertemplate="<b>%{label}</b><br>%{value} locales<br>%{percent:.0%}<extra></extra>",
     ))
     fig.update_layout(
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="top", y=-0.05, font_size=10),
+        showlegend=False,
         margin=dict(t=10, b=10, l=10, r=10),
-        height=300,
+        height=280,
         paper_bgcolor="rgba(0,0,0,0)",
     )
-    return fig
+    leyenda = (
+        '<div style="display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:center;'
+        'font-size:12px;color:#444;margin:2px 0 6px">'
+        + "".join(
+            f'<span style="white-space:nowrap"><span style="display:inline-block;'
+            f'width:10px;height:10px;background:{c};border-radius:2px;'
+            f'margin-right:5px"></span>{l}</span>'
+            for l, c in zip(labels, colors)
+        )
+        + '</div>'
+    )
+    return fig, leyenda
 
 
 def _tabla_top(lit_local: pd.DataFrame, titulo: str, ascendente: bool):
@@ -258,10 +272,13 @@ def mostrar_carrusel_v2(
 
         with col_iz:
             with st.container(border=True):
-                st.plotly_chart(
-                    _donut_desglose(d["exitosas"], d["pend_alta"], d["pend_normal"], d["razon_counts"]),
-                    width='stretch', config=_CFG, key=f"{ns}_donut",
+                fig_donut, leyenda_html = _donut_desglose(
+                    d["exitosas"], d["pend_alta"], d["pend_normal"], d["razon_counts"],
                 )
+                st.plotly_chart(fig_donut, width='stretch', config=_CFG,
+                                key=f"{ns}_donut")
+                # Leyenda HTML (no de Plotly): inmune a los redimensionados
+                st.markdown(leyenda_html, unsafe_allow_html=True)
             # Mismas 4 cajas de colores del Carrusel v1 (widget compartido)
             _mini_kpis(d["exitosas"], d["fallidas"], d["pend_alta"], d["pend_normal"])
 
